@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import base64
 import io
+import logging
 import os
 import time
 import uuid
@@ -32,6 +33,12 @@ from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.concurrency import run_in_threadpool
+
+logging.basicConfig(
+    level=os.environ.get("LOG_LEVEL", "INFO").upper(),
+    format="%(asctime)s | %(levelname)-7s | %(name)s | %(message)s",
+)
+log = logging.getLogger("qwen21-web")
 
 BASE_DIR = Path(__file__).resolve().parent
 TEMPLATES_DIR = BASE_DIR / "templates"
@@ -50,6 +57,11 @@ JOBS: dict[str, dict] = {}
 app = FastAPI(title="Qwen-Image 2.1 web UI")
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
+
+log.info(
+    "startup modal_app=%s cls=%s mock=%s max_refs=%d max_file_mb=%d",
+    MODAL_APP_NAME, MODAL_CLS_NAME, MOCK_MODAL, MAX_REFS, MAX_FILE_MB,
+)
 
 
 def _mock_png(prompt: str, width: int = 512, height: int = 512) -> bytes:
@@ -75,6 +87,7 @@ def _mock_png(prompt: str, width: int = 512, height: int = 512) -> bytes:
 def _spawn_modal(prompt: str, negative: str, width: int, height: int,
                  seed: int, steps: int, refs: list[bytes]) -> str:
     """Spawn a Modal job, return the FunctionCall id."""
+    t0 = time.time()
     if MOCK_MODAL:
         call_id = f"mock-{uuid.uuid4().hex[:12]}"
         JOBS[call_id] = {
@@ -84,6 +97,8 @@ def _spawn_modal(prompt: str, negative: str, width: int, height: int,
             "ref_count": len(refs), "created": time.time(), "mock": True,
             "ref_previews": _previews(refs),
         }
+        log.info("spawn mock call_id=%s prompt=%.60r %dx%d steps=%d seed=%d refs=%d (%.2fs)",
+                 call_id, prompt, width, height, steps, seed, len(refs), time.time() - t0)
         return call_id
     import modal
 
@@ -102,6 +117,8 @@ def _spawn_modal(prompt: str, negative: str, width: int, height: int,
         "ref_count": len(refs), "created": time.time(), "mock": False,
         "ref_previews": _previews(refs),
     }
+    log.info("spawn modal call_id=%s prompt=%.60r %dx%d steps=%d seed=%d refs=%d (%.2fs)",
+             call_id, prompt, width, height, steps, seed, len(refs), time.time() - t0)
     return call_id
 
 
@@ -120,9 +137,11 @@ def _poll_modal(call_id: str) -> None:
     job = JOBS.get(call_id)
     if job is None or job["status"] != "pending":
         return
+    elapsed = time.time() - job["created"]
     if job.get("mock"):
         # simulate ~5 s GPU delay so polling UI can be exercised
         if time.time() - job["created"] < 5:
+            log.debug("poll %s still pending (mock, %.0fs)", call_id, elapsed)
             return
         try:
             job["png"] = _mock_png(job["prompt"], job["width"], job["height"])
@@ -130,6 +149,9 @@ def _poll_modal(call_id: str) -> None:
         except Exception as e:
             job["status"] = "error"
             job["error"] = str(e)
+            log.exception("poll %s mock render failed", call_id)
+            return
+        log.info("poll %s done (mock, %.0fs, %d bytes)", call_id, elapsed, len(job["png"]))
         return
     try:
         import modal
@@ -137,13 +159,16 @@ def _poll_modal(call_id: str) -> None:
         fc = modal.FunctionCall.from_id(call_id)
         png = fc.get(timeout=0)  # raises TimeoutError while running
     except TimeoutError:
+        log.debug("poll %s still pending (%.0fs)", call_id, elapsed)
         return
     except Exception as e:
         job["status"] = "error"
         job["error"] = f"{type(e).__name__}: {e}"
+        log.exception("poll %s failed after %.0fs", call_id, elapsed)
         return
     job["png"] = bytes(png)
     job["status"] = "done"
+    log.info("poll %s done (%.0fs, %d bytes)", call_id, elapsed, len(job["png"]))
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -168,7 +193,9 @@ async def generate(
     ref_images: Optional[list[UploadFile]] = File(default=None),
 ):
     prompt = (prompt or "").strip()
+    client = request.client.host if request.client else "?"
     if not prompt:
+        log.warning("POST /generate from %s rejected: empty prompt", client)
         return templates.TemplateResponse(
             request, "index.html", {"error": "Prompt is required."}, status_code=400
         )
@@ -177,15 +204,20 @@ async def generate(
     steps = max(1, min(steps, 100))
 
     refs: list[bytes] = []
+    ref_names: list[str] = []
     for f in ref_images or []:
         if not f.filename:
             continue
         if len(refs) >= MAX_REFS:
+            log.warning("POST /generate from %s: too many refs, keeping first %d", client, MAX_REFS)
             break
         data = await f.read()
         if not data:
+            log.warning("POST /generate from %s: skipping empty file %r", client, f.filename)
             continue
         if len(data) > MAX_FILE_MB * 1024 * 1024:
+            log.warning("POST /generate from %s rejected: %s %.1f MB over limit",
+                        client, f.filename, len(data) / 1048576)
             return templates.TemplateResponse(
                 request,
                 "index.html",
@@ -193,6 +225,9 @@ async def generate(
                 status_code=400,
             )
         refs.append(data)
+        ref_names.append(f"{f.filename} ({len(data) // 1024} KB)")
+    log.info("POST /generate from %s prompt=%.80r %dx%d steps=%d seed=%d refs=[%s]",
+             client, prompt, width, height, steps, seed, ", ".join(ref_names) or "none")
 
     try:
         # blocking Modal network call -> threadpool, taaki event loop block na ho
@@ -200,12 +235,14 @@ async def generate(
             _spawn_modal, prompt, negative_prompt.strip(), width, height, seed, steps, refs
         )
     except Exception as e:
+        log.exception("POST /generate spawn failed for %s", client)
         return templates.TemplateResponse(
             request,
             "index.html",
             {"error": f"Modal spawn failed: {type(e).__name__}: {e}"},
             status_code=502,
         )
+    log.info("POST /generate from %s -> redirect /result/%s", client, call_id)
     return RedirectResponse(url=f"/result/{call_id}", status_code=303)
 
 
@@ -213,6 +250,7 @@ async def generate(
 def result(request: Request, call_id: str):
     job = JOBS.get(call_id)
     if job is None:
+        log.warning("GET /result/%s: unknown job, tracking as fresh Modal lookup", call_id)
         # backend restarted or unknown id — still try Modal directly once
         JOBS[call_id] = {
             "status": "pending", "png": None, "error": None, "prompt": "",
@@ -223,6 +261,7 @@ def result(request: Request, call_id: str):
         job = JOBS[call_id]
     _poll_modal(call_id)
     elapsed = int(time.time() - job["created"])
+    log.debug("GET /result/%s status=%s elapsed=%ds", call_id, job["status"], elapsed)
     return templates.TemplateResponse(
         request, "result.html", {"call_id": call_id, "job": job, "elapsed": elapsed}
     )
@@ -232,8 +271,11 @@ def result(request: Request, call_id: str):
 def image(call_id: str):
     job = JOBS.get(call_id)
     if job is None:
+        log.warning("GET /image/%s: unknown job", call_id)
         return Response("unknown job", status_code=404)
     _poll_modal(call_id)
     if job["status"] != "done" or not job["png"]:
+        log.debug("GET /image/%s: still processing (status=%s)", call_id, job["status"])
         return Response("still processing", status_code=202)
+    log.info("GET /image/%s: serving %d bytes", call_id, len(job["png"]))
     return Response(content=job["png"], media_type="image/png")
