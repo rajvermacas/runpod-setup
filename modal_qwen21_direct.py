@@ -30,6 +30,7 @@ Run:
   modal run modal_qwen21_direct.py --use-nvfp4-dit --width 1024 --height 1024 --steps 25
   modal run modal_qwen21_direct.py --prompt "make the jacket bright red" --ref-images photo.png
   modal run modal_qwen21_direct.py --prompt "merge these two into one scene" --ref-images "a.png,b.png"
+  modal run modal_qwen21_direct.py --scaledown-window 300 --prompt "..."   # keep container warm 5 min
 """
 from __future__ import annotations
 
@@ -43,6 +44,9 @@ import modal
 APP_NAME = "qwen21-4bit-direct"
 VOL_NAME = "qwen21-comfy-cache"
 COMFY_DIR = "/root/comfy/ComfyUI"
+# Idle seconds before a container scales down. Default 60; override per run
+# with `modal run modal_qwen21_direct.py --scaledown-window 300 ...`.
+DEFAULT_SCALEDOWN_WINDOW = 60
 
 HF_REPO_OFFICIAL = "Comfy-Org/Qwen-Image-2.1"
 HF_REPO_NVFP4_DIT = "pottokao/Qwen-Image-2.1-DiT-NVFP4-ComfyUI"
@@ -114,7 +118,7 @@ app = modal.App(APP_NAME, image=image)
 @app.cls(
     gpu=os.environ.get("MODAL_GPU", "L4"),  # default L4; override: MODAL_GPU=T4 modal run ...
     volumes={"/cache": vol},
-    scaledown_window=60,
+    scaledown_window=DEFAULT_SCALEDOWN_WINDOW,
     timeout=900,  # max container lifetime: 15 min
     enable_memory_snapshot=True,
 )
@@ -269,12 +273,21 @@ def main(
     scheduler: str = "simple",
     seed: int = 42,
     use_nvfp4_dit: bool = False,
+    scaledown_window: int = DEFAULT_SCALEDOWN_WINDOW,  # idle seconds before scale-down (default 60)
     out: str = "qwen21_direct_out.png",
 ):
+    if scaledown_window < 1:
+        raise ValueError("--scaledown-window must be at least 1 second")
     refs = [Path(p.strip()).read_bytes() for p in ref_images.split(",") if p.strip()]
     if refs:
         print(f"edit mode: {len(refs)} reference image(s) -> output follows the first reference's size")
-    png: bytes = Qwen21Direct().generate.remote(
+    cls = Qwen21Direct
+    if scaledown_window != DEFAULT_SCALEDOWN_WINDOW:
+        # Dynamic config: bind a variant with this idle window (it autoscales
+        # independently of the static default; base config is untouched).
+        cls = cls.with_options(scaledown_window=scaledown_window)
+        print(f"scaledown_window: {scaledown_window}s idle before scale-down")
+    png: bytes = cls().generate.remote(
         prompt, negative, width, height, seed, steps, cfg, sampler, scheduler, use_nvfp4_dit, CLIP_W4A8,
         ref_images=refs or None,
     )

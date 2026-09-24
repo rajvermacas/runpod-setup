@@ -57,6 +57,7 @@ Defaults are the **official Qwen-Image 2.1 settings** (25 steps, CFG 1.0, euler 
 | `--scheduler` | `simple` | `normal`, `karras`, … |
 | `--seed` | 42 | `0` = random seed |
 | `--use-nvfp4-dit` | off | swap to NVFP4 DiT (full speed needs B200) |
+| `--scaledown-window` | 60 | idle seconds before the container scales down; raise it (e.g. 300) to keep a warm container between runs |
 | `--out` | `qwen21_direct_out.png` | local output path |
 
 GPU is selected with the `MODAL_GPU` env var (default `L4`).
@@ -88,6 +89,10 @@ modal run modal_qwen21_direct.py \
 
 # 6) NVFP4 DiT (smallest; native speed only on B200/B300)
 MODAL_GPU=B200 modal run modal_qwen21_direct.py --prompt "..." --use-nvfp4-dit --out out_nvfp4.png
+
+# 7) keep the container warm 5 min after the run — a follow-up run with the same
+#    --scaledown-window reuses it and skips the cold start
+modal run modal_qwen21_direct.py --prompt "another take, same character" --seed 0 --scaledown-window 300 --out take2.png
 ```
 
 ### Edit with reference images
