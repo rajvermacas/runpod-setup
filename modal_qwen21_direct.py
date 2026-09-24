@@ -123,7 +123,7 @@ app = modal.App(APP_NAME, image=image)
     timeout=900,  # max container lifetime: 15 min
     enable_memory_snapshot=True,
 )
-@modal.concurrent(max_inputs=2)
+@modal.concurrent(max_inputs=1)  # one job at a time; avoids VRAM contention/OOM while testing
 class Qwen21Direct:
     @modal.enter(snap=True)
     def load(self):
