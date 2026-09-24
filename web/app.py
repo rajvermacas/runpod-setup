@@ -31,6 +31,7 @@ from fastapi import FastAPI, File, Form, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
+from starlette.concurrency import run_in_threadpool
 
 BASE_DIR = Path(__file__).resolve().parent
 TEMPLATES_DIR = BASE_DIR / "templates"
@@ -150,6 +151,11 @@ def index(request: Request):
     return templates.TemplateResponse(request, "index.html")
 
 
+@app.get("/health")
+def health():
+    return {"status": "ok", "modal_app": MODAL_APP_NAME, "mock": MOCK_MODAL}
+
+
 @app.post("/generate")
 async def generate(
     request: Request,
@@ -189,7 +195,10 @@ async def generate(
         refs.append(data)
 
     try:
-        call_id = _spawn_modal(prompt, negative_prompt.strip(), width, height, seed, steps, refs)
+        # blocking Modal network call -> threadpool, taaki event loop block na ho
+        call_id = await run_in_threadpool(
+            _spawn_modal, prompt, negative_prompt.strip(), width, height, seed, steps, refs
+        )
     except Exception as e:
         return templates.TemplateResponse(
             request,
