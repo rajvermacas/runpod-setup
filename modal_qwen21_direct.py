@@ -6,6 +6,11 @@ Uses ComfyUI nodes in-process via NODE_CLASS_MAPPINGS:
   UNETLoader / CLIPLoader / VAELoader / TextEncodeQwenImage21 /
   EmptyLatentImage / KSampler / VAEDecode
 
+Text-to-image and edit: pass one or more reference images with --ref-images
+(comma-separated local paths, up to 16). TextEncodeQwenImage21 splices them
+into the sequence as VAE latents; sampling uses the latent it returns for the
+first reference, so the output follows that reference's size and composition.
+
 4-bit file set (Comfy-Org/Qwen-Image-2.1, public):
   diffusion_models/qwen_image_2.1_int8_convrot.safetensors (7.26 GB)
   text_encoders/qwen3vl_8b_w4a8.safetensors                (6.31 GB, W4A8 4-bit)
@@ -23,6 +28,8 @@ Run:
   modal secret create huggingface-secret HF_TOKEN=hf_...   # optional, raises rate limits
   modal run modal_qwen21_direct.py --prompt "astronaut in neon Tokyo alley"
   modal run modal_qwen21_direct.py --use-nvfp4-dit --width 1024 --height 1024 --steps 25
+  modal run modal_qwen21_direct.py --prompt "make the jacket bright red" --ref-images photo.png
+  modal run modal_qwen21_direct.py --prompt "merge these two into one scene" --ref-images "a.png,b.png"
 """
 from __future__ import annotations
 
@@ -169,14 +176,31 @@ class Qwen21Direct:
             print(f"models cached: {unet_name} + {clip_name} + {VAE}", flush=True)
         return self._models[key]
 
-    def _encode(self, clip, prompt: str, negative_prompt: str, resolution: int):
+    def _bytes_to_image(self, raw: bytes):
+        """Local PNG/JPEG bytes -> ComfyUI IMAGE tensor [1, H, W, 3] float32 0-1."""
+        import numpy as np
+        from PIL import Image
+
+        img = Image.open(pyio.BytesIO(raw)).convert("RGB")
+        arr = np.array(img).astype(np.float32) / 255.0
+        return self.torch.from_numpy(arr).unsqueeze(0)
+
+    def _encode(self, clip, vae, prompt: str, negative_prompt: str, resolution: int, ref_images=None):
+        """Encode prompt (+ optional reference images). Returns (positive, negative, latent|None).
+
+        In edit mode the current node also returns an empty latent sized to the
+        first reference — sampling must use it, any other size shifts the edit.
+        """
         enc = self.TextEncode
-        if hasattr(enc, "encode"):  # older/custom-node shape
+        if hasattr(enc, "encode"):  # older/custom-node shape: text-to-image only
+            if ref_images:
+                raise RuntimeError("reference images need the current TextEncodeQwenImage21 (execute()) node")
             out = enc.encode(clip, prompt, negative_prompt, resolution)
-        else:  # current ComfyUI io.ComfyNode shape: execute()
-            out = enc.execute(clip, prompt, negative_prompt, None, resolution, {})
-        positive, negative = out[0], out[1]
-        return positive, negative
+            return out[0], out[1], None
+        # current ComfyUI io.ComfyNode shape: execute(clip, prompt, negative_prompt, vae, resolution, images)
+        images = {f"image_{i}": t for i, t in enumerate(ref_images or [], 1)}
+        out = enc.execute(clip, prompt, negative_prompt, vae if images else None, resolution, images)
+        return out[0], out[1], (out[2] if images else None)
 
     @modal.method()
     def generate(
@@ -192,11 +216,11 @@ class Qwen21Direct:
         scheduler: str = "simple",
         use_nvfp4_dit: bool = False,
         clip_name: str = CLIP_W4A8,
+        ref_images: list[bytes] | None = None,
     ) -> bytes:
         import random
         import time
 
-        import numpy as np
         from PIL import Image
 
         if seed == 0:
@@ -204,16 +228,27 @@ class Qwen21Direct:
             seed = random.randint(0, 18446744073709551615)
 
         unet, clip, vae = self._get_models(use_nvfp4_dit, clip_name)
+        ref_tensors = [self._bytes_to_image(b) for b in (ref_images or [])]
         t_inf = time.time()
         with self.torch.inference_mode():
-            positive, negative = self._encode(clip, prompt, negative_prompt, max(width, height))
-            latent = self.EmptyLatent.generate(width, height, batch_size=1)[0]
+            positive, negative, edit_latent = self._encode(
+                clip, vae, prompt, negative_prompt, max(width, height), ref_tensors
+            )
+            if edit_latent is not None:
+                latent = edit_latent
+            else:
+                latent = self.EmptyLatent.generate(width, height, batch_size=1)[0]
             samples = self.KSampler.sample(
                 unet, seed, steps, cfg, sampler_name, scheduler, positive, negative, latent, denoise=1.0
             )[0]
             decoded = self.VAEDecode.decode(vae, samples)[0].detach()
-        print(f"inference (encode+sample+decode) took {time.time()-t_inf:.1f}s for {width}x{height}@{steps} steps", flush=True)
-        arr = np.array(decoded * 255, dtype=np.uint8)[0]
+        if ref_tensors:
+            print(
+                f"edit mode: {len(ref_tensors)} reference image(s); sampling latent {tuple(latent['samples'].shape)}",
+                flush=True,
+            )
+        print(f"inference (encode+sample+decode) took {time.time()-t_inf:.1f}s at {steps} steps", flush=True)
+        arr = (decoded * 255).to(self.torch.uint8).cpu().numpy()[0]
         buf = pyio.BytesIO()
         Image.fromarray(arr).save(buf, format="PNG")
         return buf.getvalue()
@@ -223,6 +258,7 @@ class Qwen21Direct:
 def main(
     prompt: str = "cinematic portrait of an astronaut in a neon Tokyo alley, rain reflections, ultra detailed",
     negative: str = "",
+    ref_images: str = "",  # comma-separated local paths -> edit mode (up to 16)
     width: int = 1024,
     height: int = 1024,
     # Official Qwen-Image 2.1 sampling settings (ComfyUI template defaults):
@@ -235,8 +271,12 @@ def main(
     use_nvfp4_dit: bool = False,
     out: str = "qwen21_direct_out.png",
 ):
+    refs = [Path(p.strip()).read_bytes() for p in ref_images.split(",") if p.strip()]
+    if refs:
+        print(f"edit mode: {len(refs)} reference image(s) -> output follows the first reference's size")
     png: bytes = Qwen21Direct().generate.remote(
-        prompt, negative, width, height, seed, steps, cfg, sampler, scheduler, use_nvfp4_dit, CLIP_W4A8
+        prompt, negative, width, height, seed, steps, cfg, sampler, scheduler, use_nvfp4_dit, CLIP_W4A8,
+        ref_images=refs or None,
     )
     Path(out).write_bytes(png)
     print(f"saved {out} ({len(png)/1e6:.2f} MB)")

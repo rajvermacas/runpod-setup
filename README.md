@@ -1,6 +1,6 @@
 # Qwen-Image 2.1 (4-bit) on Modal
 
-Run **Qwen-Image 2.1** — the 4-bit quantized variants — on [Modal](https://modal.com) GPUs using ComfyUI's Python node library directly (no web UI, no server). Generates 1024×1024 images from text prompts and saves them locally as PNG.
+Run **Qwen-Image 2.1** — the 4-bit quantized variants — on [Modal](https://modal.com) GPUs using ComfyUI's Python node library directly (no web UI, no server). Generates 1024×1024 images from text prompts, or edits your own images from one or more reference photos, and saves the result locally as PNG.
 
 ## Model files (4-bit set)
 
@@ -49,6 +49,7 @@ Defaults are the **official Qwen-Image 2.1 settings** (25 steps, CFG 1.0, euler 
 |---|---|---|
 | `--prompt` | astronaut example | text prompt |
 | `--negative` | `""` | negative prompt (relevant when CFG > 1) |
+| `--ref-images` | `""` | comma-separated local paths → **edit mode** (up to 16 refs); output follows the first reference |
 | `--width/--height` | 1024/1024 | multiples of 32; 2048 = native 2K |
 | `--steps` | 25 | official range ~25–50 at CFG 1 |
 | `--cfg` | 1.0 | official path keeps CFG 1; raise only with a negative prompt |
@@ -89,6 +90,27 @@ modal run modal_qwen21_direct.py \
 MODAL_GPU=B200 modal run modal_qwen21_direct.py --prompt "..." --use-nvfp4-dit --out out_nvfp4.png
 ```
 
+### Edit with reference images
+
+Pass one or more local images with `--ref-images` (comma-separated, up to 16). The text encoder sees them as reference latents, and the output follows the **first reference's size and composition** — in edit mode `--width/--height` set the working resolution (`resolution = max(width, height)`, ~1 MP by default), not the output size.
+
+```bash
+# 1) single-reference edit — verified on L4: 41.5 s inference
+modal run modal_qwen21_direct.py \
+  --prompt "make him wear a bright red jacket and black sunglasses; keep his face, pose and the park background unchanged" \
+  --ref-images srk_park.png --seed 0 --out srk_edit_red.png
+
+# 2) multiple references (comma-separated)
+modal run modal_qwen21_direct.py \
+  --prompt "place the woman from the second image next to the man from the first, same lighting" \
+  --ref-images "a.png,b.png" --out combined.png
+```
+
+Notes:
+- Output dimensions come from the first reference (resized to the `--width`×`--height` box, aspect preserved, multiples of 32). Sampling uses the latent the node returns — any other size shifts the edit.
+- Edit runs are slightly slower than text-to-image (41.5 s vs 33.0 s inference on L4 at 1024²): reference latents extend the sequence.
+- The full ComfyUI UI path supports the same thing: `LoadImage` → `TextEncodeQwenImage21` (images input) → sample with the node's latent output.
+
 ## Full ComfyUI UI on Modal (optional)
 
 ```bash
@@ -110,6 +132,8 @@ Open the printed URL → **Templates → Qwen-Image 2.1** → generate. Billed o
 | **Cost per image** | $0.038 | **~$0.025** |
 
 L4 is both faster and cheaper per image despite the higher hourly rate — ~5× faster sampling (native int8 paths, no VRAM thrashing). The first-ever run includes a one-time image build + ~14 GB model download (10–20 min); after that, only container start + inference.
+
+Edit mode (one 1024² reference) adds ~25% to inference: **41.5 s** on L4 (vs 33.0 s text-to-image).
 
 ## GPU choice
 
@@ -136,5 +160,6 @@ Select with `MODAL_GPU=T4 modal run modal_qwen21_direct.py ...` (default: L4).
 
 - **`KeyError: 'TextEncodeQwenImage21'`** — importing ComfyUI `nodes` directly registers core nodes only. The code calls `asyncio.run(nodes.init_extra_nodes(init_custom_nodes=False, init_api_nodes=False))` before reading `NODE_CLASS_MAPPINGS`; keep that call if you modify `load()`.
 - **`memory allocation failed with OOM` during decode** — only happens when overriding to `MODAL_GPU=T4` at 1024px; ComfyUI falls back and still saves the image. The default L4 (24 GB) has headroom and shows no warning.
+- **Edit output size ignores `--width/--height`** — expected in edit mode: the output follows the first reference's aspect ratio, resized to the working resolution (`max(width, height)`). Text-to-image uses `--width/--height` exactly.
 - **First run slow / model download** — models live in the Modal Volume `qwen21-comfy-cache`; the first build downloads ~14 GB. Subsequent runs are fast.
 - **License** — Qwen weights are under the Qwen Research License (research/evaluation; non-commercial).
