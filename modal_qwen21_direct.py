@@ -105,7 +105,7 @@ app = modal.App(APP_NAME, image=image)
 
 
 @app.cls(
-    gpu="T4",  # cheapest Modal GPU; use "L4" for cheapest viable 24 GB headroom
+    gpu=os.environ.get("MODAL_GPU", "T4"),  # override: MODAL_GPU=L4 modal run ...
     volumes={"/cache": vol},
     scaledown_window=60,
     timeout=3600,
