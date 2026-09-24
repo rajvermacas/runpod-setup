@@ -120,7 +120,7 @@ app = modal.App(APP_NAME, image=image)
     volumes={"/cache": vol},
     scaledown_window=DEFAULT_SCALEDOWN_WINDOW,
     max_containers=1,  # cap parallel spend while testing; concurrent calls queue
-    timeout=900,  # max container lifetime: 15 min
+    timeout=600,  # max container lifetime: 10 min
     enable_memory_snapshot=True,
 )
 @modal.concurrent(max_inputs=1)  # one job at a time; avoids VRAM contention/OOM while testing
