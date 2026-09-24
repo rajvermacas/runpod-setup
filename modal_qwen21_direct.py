@@ -14,9 +14,9 @@ Optional true-4-bit DiT (community):
   diffusion_models/qwen_image_2.1_nvfp4.safetensors (3.91 GB,
     pottokao/Qwen-Image-2.1-DiT-NVFP4-ComfyUI)
 
-GPU: T4 — cheapest Modal GPU ($0.59/hr). L4 ($0.80/hr, 24 GB) is the
-cheapest *viable* pick for 1024px+ with headroom; T4 works at 1024px with
-w4a8 TE + offload but is slow (Turing, NVFP4 emulated, no native FP4).
+GPU: L4 (24 GB, $0.80/hr) by default — fastest and cheapest per image
+(native int8 paths, no decode OOM). Override with MODAL_GPU=T4 ($0.59/hr,
+slower, 16 GB) or MODAL_GPU=B200 (native NVFP4).
 
 Run:
   modal setup
@@ -105,7 +105,7 @@ app = modal.App(APP_NAME, image=image)
 
 
 @app.cls(
-    gpu=os.environ.get("MODAL_GPU", "L4"),  # override: MODAL_GPU=L4 modal run ...
+    gpu=os.environ.get("MODAL_GPU", "L4"),  # default L4; override: MODAL_GPU=T4 modal run ...
     volumes={"/cache": vol},
     scaledown_window=60,
     timeout=900,  # max container lifetime: 15 min

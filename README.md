@@ -58,18 +58,18 @@ Defaults are the **official Qwen-Image 2.1 settings** (25 steps, CFG 1.0, euler 
 | `--use-nvfp4-dit` | off | swap to NVFP4 DiT (full speed needs B200) |
 | `--out` | `qwen21_direct_out.png` | local output path |
 
-GPU is selected with the `MODAL_GPU` env var (default `T4`).
+GPU is selected with the `MODAL_GPU` env var (default `L4`).
 
 ### Execution examples
 
 ```bash
-# 1) default run (T4, official sampling: 25 steps / CFG 1 / euler + simple)
+# 1) default run (L4, official sampling: 25 steps / CFG 1 / euler + simple)
 modal run modal_qwen21_direct.py --prompt "a cat in a spacesuit" --out cat.png
 
-# 2) L4 24GB — fastest and cheapest per image (see timings below)
-MODAL_GPU=L4 modal run modal_qwen21_direct.py \
+# 2) cheapest hourly rate (T4, slower with a recoverable decode OOM warning)
+MODAL_GPU=T4 modal run modal_qwen21_direct.py \
   --prompt "cinematic photorealistic full body shot of Sylvester Stallone standing on a sunny beach, muscular build, beach shorts, ocean waves behind him, golden sunlight, white sand, ultra detailed" \
-  --seed 0 --out stallone_beach.png
+  --seed 0 --out stallone_beach_t4.png
 
 # 3) random seed (every run gives a new image)
 modal run modal_qwen21_direct.py --prompt "a red fox in a snowy forest" --seed 0 --out fox.png
@@ -80,8 +80,8 @@ modal run modal_qwen21_direct.py \
   --steps 20 --cfg 6.0 --sampler euler --scheduler simple \
   --negative "blurry, low quality" --out sloth.png
 
-# 5) native 2K output (needs L4+; slower)
-MODAL_GPU=L4 modal run modal_qwen21_direct.py \
+# 5) native 2K output (default L4; slower)
+modal run modal_qwen21_direct.py \
   --prompt "aerial view of a coral reef, turquoise water, ultra detailed" \
   --width 2048 --height 2048 --out reef_2k.png
 
@@ -116,10 +116,10 @@ L4 is both faster and cheaper per image despite the higher hourly rate — ~5× 
 | GPU | $/hr | Notes |
 |---|---|---|
 | T4 | 0.59 | cheapest hourly; 16 GB — works at 1024px with a recoverable decode OOM warning; slow (Turing has no native int8/FP8 paths) |
-| **L4** | 0.80 | 24 GB — **best value per image** (~2× faster wall, ~35% cheaper per image than T4); recommended default |
+| **L4** | 0.80 | 24 GB — **default**; **best value per image** (~2× faster wall, ~35% cheaper per image than T4) |
 | B200 | 6.25 | native NVFP4 kernels for `--use-nvfp4-dit` |
 
-Select with `MODAL_GPU=L4 modal run modal_qwen21_direct.py ...` (default: T4).
+Select with `MODAL_GPU=T4 modal run modal_qwen21_direct.py ...` (default: L4).
 
 ## Files
 
@@ -135,6 +135,6 @@ Select with `MODAL_GPU=L4 modal run modal_qwen21_direct.py ...` (default: T4).
 ## Troubleshooting
 
 - **`KeyError: 'TextEncodeQwenImage21'`** — importing ComfyUI `nodes` directly registers core nodes only. The code calls `asyncio.run(nodes.init_extra_nodes(init_custom_nodes=False, init_api_nodes=False))` before reading `NODE_CLASS_MAPPINGS`; keep that call if you modify `load()`.
-- **`memory allocation failed with OOM` during decode on T4** — expected at 1024px; ComfyUI falls back and still saves the image. Use `gpu="L4"` for headroom.
+- **`memory allocation failed with OOM` during decode** — only happens when overriding to `MODAL_GPU=T4` at 1024px; ComfyUI falls back and still saves the image. The default L4 (24 GB) has headroom and shows no warning.
 - **First run slow / model download** — models live in the Modal Volume `qwen21-comfy-cache`; the first build downloads ~14 GB. Subsequent runs are fast.
 - **License** — Qwen weights are under the Qwen Research License (research/evaluation; non-commercial).
