@@ -182,11 +182,20 @@ class Qwen21Direct:
         return self._models[key]
 
     def _bytes_to_image(self, raw: bytes):
-        """Local PNG/JPEG bytes -> ComfyUI IMAGE tensor [1, H, W, 3] float32 0-1."""
+        """Local PNG/JPEG bytes -> ComfyUI IMAGE tensor [1, H, W, 3|4] float32 0-1.
+
+        Keeps alpha when present: TextEncodeQwenImage21 composites RGBA over
+        white for the vision tower and encodes all four channels with the VAE,
+        so converting everything to RGB would silently drop transparency edits.
+        """
         import numpy as np
         from PIL import Image
 
-        img = Image.open(pyio.BytesIO(raw)).convert("RGB")
+        img = Image.open(pyio.BytesIO(raw))
+        if img.mode in ("RGBA", "LA") or "transparency" in img.info:
+            img = img.convert("RGBA")
+        else:
+            img = img.convert("RGB")
         arr = np.array(img).astype(np.float32) / 255.0
         return self.torch.from_numpy(arr).unsqueeze(0)
 

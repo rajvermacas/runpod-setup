@@ -26,13 +26,13 @@ import os
 import time
 import uuid
 from pathlib import Path
-from typing import Optional
 
-from fastapi import FastAPI, File, Form, Request, UploadFile
+from fastapi import FastAPI, Form, Request, UploadFile
 from fastapi.responses import HTMLResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from starlette.concurrency import run_in_threadpool
+from starlette.datastructures import UploadFile as StarletteUploadFile
 
 logging.basicConfig(
     level=os.environ.get("LOG_LEVEL", "INFO").upper(),
@@ -122,6 +122,18 @@ def _spawn_modal(prompt: str, negative: str, width: int, height: int,
     return call_id
 
 
+def _is_image(data: bytes) -> bool:
+    """True if bytes decode as an image (early 400 > late GPU failure)."""
+    from PIL import Image
+
+    try:
+        with Image.open(io.BytesIO(data)) as img:
+            img.load()
+        return True
+    except Exception:
+        return False
+
+
 def _previews(refs: list[bytes], limit: int = 4) -> list[str]:
     out: list[str] = []
     for b in refs[:limit]:
@@ -190,7 +202,6 @@ async def generate(
     height: int = Form(1024),
     steps: int = Form(25),
     seed: int = Form(42),
-    ref_images: Optional[list[UploadFile]] = File(default=None),
 ):
     prompt = (prompt or "").strip()
     client = request.client.host if request.client else "?"
@@ -202,15 +213,36 @@ async def generate(
     width = max(256, min(width, 2048))
     height = max(256, min(height, 2048))
     steps = max(1, min(steps, 100))
+    seed = max(0, seed)  # Modal treats 0 as random; negative seeds crash the sampler
+
+    # NOTE: parse the multipart form manually instead of
+    # `ref_images: list[UploadFile] = File(...)`. Starlette parses a part with
+    # an empty filename (filename="") as a plain str field, which fails
+    # list[UploadFile] validation and 422s the WHOLE request — even when valid
+    # files accompany it. Filtering here keeps one stray part from nuking the
+    # submission. NB: form values are starlette UploadFiles; fastapi's
+    # UploadFile is a *subclass*, so isinstance must target the starlette base.
+    form = await request.form()
+    uploads: list[UploadFile] = [
+        v for k, v in form.multi_items()
+        if k == "ref_images" and isinstance(v, StarletteUploadFile) and v.filename
+    ]
 
     refs: list[bytes] = []
     ref_names: list[str] = []
-    for f in ref_images or []:
-        if not f.filename:
-            continue
+    for f in uploads:
         if len(refs) >= MAX_REFS:
             log.warning("POST /generate from %s: too many refs, keeping first %d", client, MAX_REFS)
             break
+        if f.size is not None and f.size > MAX_FILE_MB * 1024 * 1024:
+            log.warning("POST /generate from %s rejected: %s %.1f MB over limit",
+                        client, f.filename, f.size / 1048576)
+            return templates.TemplateResponse(
+                request,
+                "index.html",
+                {"error": f"{f.filename}: exceeds {MAX_FILE_MB} MB limit."},
+                status_code=400,
+            )
         data = await f.read()
         if not data:
             log.warning("POST /generate from %s: skipping empty file %r", client, f.filename)
@@ -222,6 +254,15 @@ async def generate(
                 request,
                 "index.html",
                 {"error": f"{f.filename}: exceeds {MAX_FILE_MB} MB limit."},
+                status_code=400,
+            )
+        if not _is_image(data):
+            log.warning("POST /generate from %s rejected: %r is not a decodable image",
+                        client, f.filename)
+            return templates.TemplateResponse(
+                request,
+                "index.html",
+                {"error": f"{f.filename}: not a valid image file."},
                 status_code=400,
             )
         refs.append(data)
