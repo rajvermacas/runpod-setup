@@ -1,0 +1,25 @@
+# secrets / credentials — never commit
+.env
+.env.*
+!.env.example
+modal_token.json
+*token*.json
+
+# python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# generated outputs
+*.png
+*.jpg
+*.jpeg
+*.webp
+output/
+outputs/
+
+# modal / misc
+.modal/
+.modal.toml
