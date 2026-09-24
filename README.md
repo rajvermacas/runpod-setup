@@ -162,6 +162,14 @@ MOCK_MODAL=1 python3 -m uvicorn web.app:app --port 8000
 
 Env overrides: `MODAL_APP_NAME`, `MODAL_CLS_NAME`, `MOCK_MODAL=1`.
 
+### Server logs
+
+Structured logs (`qwen21-web` logger, timestamped) cover: startup config, every `POST /generate` (client IP, prompt, size, steps, seed, ref filenames + KB), Modal spawn time + `call_id`, poll completion (elapsed seconds, PNG bytes), and warnings for bad input/unknown jobs with full tracebacks on failures. Pending polls log at DEBUG only, so the 4-s auto-refresh doesn't spam.
+
+```bash
+LOG_LEVEL=DEBUG python3 -m uvicorn web.app:app --port 8000   # verbose polling
+```
+
 ## Full ComfyUI UI on Modal (optional)
 
 ```bash
