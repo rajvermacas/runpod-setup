@@ -93,7 +93,7 @@ def _spawn_modal(prompt: str, negative: str, width: int, height: int,
         1.0, "euler", "simple", False, MODAL_CLIP,
         ref_images=refs or None,
     )
-    call_id: str = call.call_id
+    call_id: str = call.object_id
     JOBS[call_id] = {
         "status": "pending", "png": None, "error": None,
         "prompt": prompt, "negative": negative,
