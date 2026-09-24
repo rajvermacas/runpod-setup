@@ -96,6 +96,25 @@ def _hf_secrets() -> list:
         return [modal.Secret.from_dict({"HF_TOKEN": os.environ.get("HF_TOKEN", "")})]
 
 
+def _fetch_modal_metered_cost():
+    """Month-to-date Modal metered cost (USD, pre-credit) via the billing API.
+
+    Returns a Decimal, or None if the lookup fails. Never raises: cost logging
+    must not break generation (e.g. unauthenticated env, API hiccup).
+    """
+    try:
+        summary = modal.Workspace.from_context().billing.summary()
+        print(
+            f"Modal billing: month-to-date metered ${float(summary.metered_cost):.8f}"
+            f" (billed ${float(summary.billed_cost):.8f})",
+            flush=True,
+        )
+        return summary.metered_cost
+    except Exception as e:
+        print(f"Modal billing lookup failed, cost logging skipped: {e}", flush=True)
+        return None
+
+
 vol = modal.Volume.from_name(VOL_NAME, create_if_missing=True)
 
 image = (
@@ -276,6 +295,10 @@ def main(
     scaledown_window: int = DEFAULT_SCALEDOWN_WINDOW,  # idle seconds before scale-down (default 60)
     out: str = "qwen21_direct_out.png",
 ):
+    import time as _billing_time
+
+    # Exact-cost logging: snapshot month-to-date metered cost BEFORE any spend.
+    cost_before = _fetch_modal_metered_cost()
     if scaledown_window < 1:
         raise ValueError("--scaledown-window must be at least 1 second")
     refs = [Path(p.strip()).read_bytes() for p in ref_images.split(",") if p.strip()]
@@ -293,3 +316,30 @@ def main(
     )
     Path(out).write_bytes(png)
     print(f"saved {out} ({len(png)/1e6:.2f} MB)")
+
+    # Exact-cost logging: snapshot metered cost AFTER the run and report delta.
+    # Billing ingestion lags the run by ~1-3 min, so poll until the meter
+    # moves (up to ~3 min), then subtract: cost = after - before.
+    cost_after = _fetch_modal_metered_cost()
+    if cost_before is not None and cost_after is not None:
+        deadline = _billing_time.time() + 180
+        while cost_after <= cost_before and _billing_time.time() < deadline:
+            print("Modal billing has not ingested this run yet; re-checking in 15s ...", flush=True)
+            _billing_time.sleep(15)
+            cost_after = _fetch_modal_metered_cost()
+            if cost_after is None:
+                break
+        if cost_after is not None:
+            run_cost = cost_after - cost_before
+            print(
+                f"Modal cost for this generation: ${float(run_cost):.8f}"
+                f" (metered ${float(cost_before):.8f} -> ${float(cost_after):.8f})",
+                flush=True,
+            )
+            if run_cost <= 0:
+                print(
+                    "Note: billing still shows no increase; it lags a few minutes —"
+                    " re-run `modal billing summary --json` shortly for the final figure."
+                    " Delta also includes any concurrent workspace usage.",
+                    flush=True,
+                )
