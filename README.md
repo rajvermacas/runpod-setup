@@ -41,48 +41,85 @@ modal run modal_qwen21_direct.py \
   --out srk_park.png
 ```
 
-Flags (defined in `modal_qwen21_direct.py` → `main()`):
+### Flags
+
+Defaults are the **official Qwen-Image 2.1 settings** (25 steps, CFG 1.0, euler + simple). Every value can be overridden.
 
 | Flag | Default | Notes |
 |---|---|---|
 | `--prompt` | astronaut example | text prompt |
+| `--negative` | `""` | negative prompt (relevant when CFG > 1) |
 | `--width/--height` | 1024/1024 | multiples of 32; 2048 = native 2K |
 | `--steps` | 25 | official range ~25–50 at CFG 1 |
+| `--cfg` | 1.0 | official path keeps CFG 1; raise only with a negative prompt |
+| `--sampler` | `euler` | any ComfyUI sampler (`euler_ancestral`, `dpmpp_2m`, `res_multistep`, …) |
+| `--scheduler` | `simple` | `normal`, `karras`, … |
 | `--seed` | 42 | `0` = random seed |
-| `--use-nvfp4-dit` | off | swap to NVFP4 DiT (smaller; full speed needs B200) |
+| `--use-nvfp4-dit` | off | swap to NVFP4 DiT (full speed needs B200) |
 | `--out` | `qwen21_direct_out.png` | local output path |
 
-Examples:
+GPU is selected with the `MODAL_GPU` env var (default `T4`).
+
+### Execution examples
 
 ```bash
-# random seed
-modal run modal_qwen21_direct.py --prompt "a cat in a spacesuit" --seed 0 --out cat.png
+# 1) default run (T4, official sampling: 25 steps / CFG 1 / euler + simple)
+modal run modal_qwen21_direct.py --prompt "a cat in a spacesuit" --out cat.png
 
-# NVFP4 DiT (edit gpu="T4" -> "B200" in modal_qwen21_direct.py for native FP4 speed)
-modal run modal_qwen21_direct.py --prompt "..." --use-nvfp4-dit
+# 2) L4 24GB — fastest and cheapest per image (see timings below)
+MODAL_GPU=L4 modal run modal_qwen21_direct.py \
+  --prompt "cinematic photorealistic full body shot of Sylvester Stallone standing on a sunny beach, muscular build, beach shorts, ocean waves behind him, golden sunlight, white sand, ultra detailed" \
+  --seed 0 --out stallone_beach.png
+
+# 3) random seed (every run gives a new image)
+modal run modal_qwen21_direct.py --prompt "a red fox in a snowy forest" --seed 0 --out fox.png
+
+# 4) override sampling (e.g. the sd.cpp-style values from Unsloth's GGUF example)
+modal run modal_qwen21_direct.py \
+  --prompt "a cartoon sloth mascot waving, flat vector illustration, bright colours" \
+  --steps 20 --cfg 6.0 --sampler euler --scheduler simple \
+  --negative "blurry, low quality" --out sloth.png
+
+# 5) native 2K output (needs L4+; slower)
+MODAL_GPU=L4 modal run modal_qwen21_direct.py \
+  --prompt "aerial view of a coral reef, turquoise water, ultra detailed" \
+  --width 2048 --height 2048 --out reef_2k.png
+
+# 6) NVFP4 DiT (smallest; native speed only on B200/B300)
+MODAL_GPU=B200 modal run modal_qwen21_direct.py --prompt "..." --use-nvfp4-dit --out out_nvfp4.png
 ```
 
-## Measured timings (T4, 1024×1024, 25 steps)
+## Full ComfyUI UI on Modal (optional)
 
-| Stage | First run (cold) | Second run (warm) |
+```bash
+modal deploy modal_qwen21.py          # persistent app, prints a stable URL
+modal app stop qwen21-4bit-comfyui    # stop it when done (redeploy to bring back)
+```
+
+Open the printed URL → **Templates → Qwen-Image 2.1** → generate. Billed only while a container is warm (L4 $0.80/hr); scales to zero ~5 min after the last activity. An open browser tab keeps it warm — close it when finished.
+
+## Measured timings (1024×1024, 25 steps)
+
+| Metric | T4 ($0.59/hr) | L4 ($0.80/hr) |
 |---|---|---|
-| Wall clock, launch → PNG | 5 min 17 s | 3 min 27 s |
-| Sampling | 2 min 35 s (~6.2 s/it) | 2 min 07 s (~5.1 s/it) |
-| Encode + VAE decode | ~36 s | ~27 s |
-| **Pure inference** | **3 min 11 s** | **2 min 34 s** |
-| Cost (T4 @ $0.59/hr) | ~$0.05 | ~$0.04 |
+| Wall clock, launch → PNG | 3 min 34 s | **1 min 45 s** |
+| Sampling | 2 min 14 s (~5.5 s/it) | **20 s (~0.75 s/it)** |
+| Encode + VAE decode | ~48 s | ~13 s |
+| **Pure inference** | 162.1 s | **33.0 s** |
+| Decode OOM warning | yes (recovers) | none |
+| **Cost per image** | $0.038 | **~$0.025** |
 
-First run includes one-time image build + ~14 GB model download (10–20 min once). Later runs reuse the cached image and Modal Volume, so only container start + inference.
+L4 is both faster and cheaper per image despite the higher hourly rate — ~5× faster sampling (native int8 paths, no VRAM thrashing). The first-ever run includes a one-time image build + ~14 GB model download (10–20 min); after that, only container start + inference.
 
 ## GPU choice
 
 | GPU | $/hr | Notes |
 |---|---|---|
-| **T4** | 0.59 | cheapest; 16 GB — works at 1024px with a decode OOM warning that ComfyUI recovers from |
-| L4 | 0.80 | 24 GB — recommended for clean 1024px+ decode headroom |
-| B200 | 6.25 | needed for native NVFP4 kernels (`--use-nvfp4-dit`) |
+| T4 | 0.59 | cheapest hourly; 16 GB — works at 1024px with a recoverable decode OOM warning; slow (Turing has no native int8/FP8 paths) |
+| **L4** | 0.80 | 24 GB — **best value per image** (~2× faster wall, ~35% cheaper per image than T4); recommended default |
+| B200 | 6.25 | native NVFP4 kernels for `--use-nvfp4-dit` |
 
-Change `gpu="T4"` in `modal_qwen21_direct.py` (~line 103) to switch.
+Select with `MODAL_GPU=L4 modal run modal_qwen21_direct.py ...` (default: T4).
 
 ## Files
 
