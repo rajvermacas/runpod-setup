@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Qwen-Image 2.1 — generate</title>
+<link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+<main class="card">
+  <h1>Qwen-Image 2.1</h1>
+  <p class="sub">Text-to-image + edit with reference photos. Backend calls Modal GPU.</p>
+  {% if error %}<p class="error">{{ error }}</p>{% endif %}
+  <form action="/generate" method="post" enctype="multipart/form-data">
+    <label for="prompt">Prompt</label>
+    <textarea id="prompt" name="prompt" rows="4" required
+      placeholder="cinematic photorealistic portrait, soft golden light, ultra detailed"></textarea>
+
+    <label for="negative_prompt">Negative prompt <span class="opt">(optional)</span></label>
+    <input id="negative_prompt" name="negative_prompt" type="text" placeholder="blurry, low quality">
+
+    <label for="ref_images">Reference images <span class="opt">(optional, up to 4 — edit mode follows the first)</span></label>
+    <input id="ref_images" name="ref_images" type="file" accept="image/*" multiple>
+
+    <div class="grid">
+      <div><label>Width</label><input name="width" type="number" value="1024" min="256" max="2048" step="32"></div>
+      <div><label>Height</label><input name="height" type="number" value="1024" min="256" max="2048" step="32"></div>
+      <div><label>Steps</label><input name="steps" type="number" value="25" min="1" max="100"></div>
+      <div><label>Seed <span class="opt">(0 = random)</span></label><input name="seed" type="number" value="42"></div>
+    </div>
+
+    <button type="submit">Generate on Modal</button>
+  </form>
+  <p class="hint">Inference takes ~30–60 s on L4 plus cold start. You’ll get a polling page — keep it open.</p>
+</main>
+</body>
+</html>

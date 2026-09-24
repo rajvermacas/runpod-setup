@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Result {{ call_id }} — Qwen-Image 2.1</title>
+<link rel="stylesheet" href="/static/style.css">
+{% if job.status == "pending" %}<meta http-equiv="refresh" content="4">{% endif %}
+</head>
+<body>
+<main class="card">
+  <p><a href="/">← New generation</a></p>
+  {% if job.status == "pending" %}
+    <h1>Generating… ({{ elapsed }}s)</h1>
+    <p class="sub">Job <code>{{ call_id }}</code> is running on Modal. This page refreshes every 4 s.</p>
+    <div class="spinner"></div>
+    <p class="hint">Prompt: {{ job.prompt }}</p>
+  {% elif job.status == "done" %}
+    <h1>Result</h1>
+    <p class="sub">{{ job.prompt }}</p>
+    <img class="out" src="/image/{{ call_id }}" alt="generated image">
+    <p><a class="btn" href="/image/{{ call_id }}" download="qwen21_{{ call_id }}.png">Download PNG</a></p>
+  {% else %}
+    <h1>Failed</h1>
+    <p class="error">{{ job.error or "unknown error" }}</p>
+  {% endif %}
+  <details>
+    <summary>Job details</summary>
+    <ul>
+      <li>call_id: <code>{{ call_id }}</code></li>
+      <li>size: {{ job.width }}×{{ job.height }}, steps {{ job.steps }}, seed {{ job.seed }}</li>
+      <li>references: {{ job.ref_count }}</li>
+      {% if job.negative %}<li>negative: {{ job.negative }}</li>{% endif %}
+    </ul>
+    {% if job.ref_previews %}
+    <div class="refs">
+      {% for src in job.ref_previews %}<img src="{{ src }}" alt="reference">{% endfor %}
+    </div>
+    {% endif %}
+  </details>
+</main>
+</body>
+</html>
