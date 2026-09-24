@@ -225,6 +225,8 @@ def main(
     negative: str = "",
     width: int = 1024,
     height: int = 1024,
+    # Official Qwen-Image 2.1 sampling settings (ComfyUI template defaults):
+    # 25 steps, cfg 1.0, euler + simple. All overridable via CLI flags.
     steps: int = 25,
     cfg: float = 1.0,
     sampler: str = "euler",
