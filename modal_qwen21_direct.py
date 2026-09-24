@@ -115,13 +115,22 @@ app = modal.App(APP_NAME, image=image)
 class Qwen21Direct:
     @modal.enter(snap=True)
     def load(self):
+        import asyncio
         import time as _time
 
         import torch
 
         t0 = _time.time()
         sys.path.insert(0, COMFY_DIR)
+        # comfy_extras nodes (incl. TextEncodeQwenImage21) only register through
+        # init_extra_nodes(), which main.py normally calls. Importing `nodes`
+        # alone gives core nodes only -> KeyError on the Qwen node.
+        import nodes as comfy_nodes
+
+        asyncio.run(comfy_nodes.init_extra_nodes(init_custom_nodes=False, init_api_nodes=False))
         from nodes import NODE_CLASS_MAPPINGS
+
+        print(f"node registry loaded in {_time.time()-t0:.1f}s: {len(NODE_CLASS_MAPPINGS)} nodes", flush=True)
 
         try:
             import comfyui_version
