@@ -105,7 +105,7 @@ app = modal.App(APP_NAME, image=image)
 
 
 @app.cls(
-    gpu=os.environ.get("MODAL_GPU", "T4"),  # override: MODAL_GPU=L4 modal run ...
+    gpu=os.environ.get("MODAL_GPU", "L4"),  # override: MODAL_GPU=L4 modal run ...
     volumes={"/cache": vol},
     scaledown_window=60,
     timeout=900,  # max container lifetime: 15 min
@@ -222,13 +222,19 @@ class Qwen21Direct:
 @app.local_entrypoint()
 def main(
     prompt: str = "cinematic portrait of an astronaut in a neon Tokyo alley, rain reflections, ultra detailed",
+    negative: str = "",
     width: int = 1024,
     height: int = 1024,
     steps: int = 25,
+    cfg: float = 1.0,
+    sampler: str = "euler",
+    scheduler: str = "simple",
     seed: int = 42,
     use_nvfp4_dit: bool = False,
     out: str = "qwen21_direct_out.png",
 ):
-    png: bytes = Qwen21Direct().generate.remote(prompt, "", width, height, seed, steps, 1.0, "euler", "simple", use_nvfp4_dit, CLIP_W4A8)
+    png: bytes = Qwen21Direct().generate.remote(
+        prompt, negative, width, height, seed, steps, cfg, sampler, scheduler, use_nvfp4_dit, CLIP_W4A8
+    )
     Path(out).write_bytes(png)
     print(f"saved {out} ({len(png)/1e6:.2f} MB)")
