@@ -108,7 +108,7 @@ app = modal.App(APP_NAME, image=image)
     gpu=os.environ.get("MODAL_GPU", "T4"),  # override: MODAL_GPU=L4 modal run ...
     volumes={"/cache": vol},
     scaledown_window=60,
-    timeout=3600,
+    timeout=900,  # max container lifetime: 15 min
     enable_memory_snapshot=True,
 )
 @modal.concurrent(max_inputs=2)
