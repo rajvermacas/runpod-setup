@@ -117,6 +117,10 @@ image = (
     .apt_install("git", "git-lfs", "libgl1-mesa-dev", "libglib2.0-0", "ffmpeg")
     .pip_install("comfy-cli", "huggingface_hub[hf_transfer]", "requests", "websocket-client")
     .run_commands("comfy --skip-prompt install --nvidia")
+    # Qwen-Image 2.1 nodes (TextEncodeQwenImage21) need ComfyUI >= 0.37; keep master.
+    .run_commands("cd /root/comfy/ComfyUI && git fetch origin && git reset --hard origin/master")
+    # ComfyUI wants cu130 torch; also unlocks Blackwell optimized ops.
+    .run_commands("pip install --upgrade torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu130")
     .env({"HF_HUB_ENABLE_HF_TRANSFER": "1", "HF_XET_HIGH_PERFORMANCE": "1"})
     .run_function(_download_all, volumes={"/cache": vol}, secrets=_hf_secrets())
 )
@@ -195,15 +199,14 @@ def _submit_and_wait(base_url: str, workflow: dict, timeout: int = 1200) -> list
 
 
 @app.cls(
-    gpu="T4",  # cheapest Modal GPU ($0.59/hr). See note below: L4 is cheapest viable for 2K.
+    gpu="L4",  # 24 GB, $0.80/hr — full UI use (2K, edits) with headroom. Use "T4" ($0.59/hr) to save.
     volumes={"/cache": vol},
-    scaledown_window=60,
-    timeout=3600,
-    enable_memory_snapshot=True,
+    scaledown_window=300,  # keep the container warm 5 min between UI actions
+    timeout=21600,  # 6 h max session; container still scales to zero when idle
 )
 @modal.concurrent(max_inputs=4)
 class ComfyQwen21:
-    @modal.enter(snap=True)
+    @modal.enter()
     def launch(self):
         self.proc = subprocess.Popen(
             "python /root/comfy/ComfyUI/main.py --listen 0.0.0.0 "
