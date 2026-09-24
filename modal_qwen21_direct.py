@@ -92,6 +92,11 @@ image = (
     .apt_install("git", "git-lfs", "libgl1-mesa-dev", "libglib2.0-0", "ffmpeg")
     .pip_install("comfy-cli", "huggingface_hub[hf_transfer]", "pillow", "numpy")
     .run_commands("comfy --skip-prompt install --nvidia")
+    # Qwen-Image 2.1 nodes (TextEncodeQwenImage21) merged Sep 2026 (ComfyUI >=0.37):
+    # force latest master in case comfy-cli pinned an older stable.
+    .run_commands("cd /root/comfy/ComfyUI && git fetch origin && git reset --hard origin/master")
+    # ComfyUI requires torch cu130+ for Blackwell-era optimized ops (T4 sm75 still supported).
+    .run_commands("pip install --upgrade torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu130")
     .env({"HF_HUB_ENABLE_HF_TRANSFER": "1", "HF_XET_HIGH_PERFORMANCE": "1"})
     .run_function(_download_all, volumes={"/cache": vol}, secrets=_hf_secrets())
 )
@@ -110,10 +115,27 @@ app = modal.App(APP_NAME, image=image)
 class Qwen21Direct:
     @modal.enter(snap=True)
     def load(self):
+        import time as _time
+
         import torch
 
+        t0 = _time.time()
         sys.path.insert(0, COMFY_DIR)
         from nodes import NODE_CLASS_MAPPINGS
+
+        try:
+            import comfyui_version
+
+            print(f"ComfyUI version: {comfyui_version.__version__}", flush=True)
+        except Exception:
+            pass
+        print(f"torch {torch.__version__}, cuda={torch.cuda.is_available()}", flush=True)
+        if torch.cuda.is_available():
+            print(f"gpu: {torch.cuda.get_device_name(0)}, sm={torch.cuda.get_device_capability(0)}", flush=True)
+        missing = [n for n in ("UNETLoader", "CLIPLoader", "VAELoader", "TextEncodeQwenImage21", "KSampler", "VAEDecode", "EmptyLatentImage") if n not in NODE_CLASS_MAPPINGS]
+        if missing:
+            qwen_nodes = sorted(n for n in NODE_CLASS_MAPPINGS if "Qwen" in n)
+            raise RuntimeError(f"ComfyUI too old, missing nodes: {missing}. Qwen nodes present: {qwen_nodes}")
 
         self.torch = torch
         self.UNETLoader = NODE_CLASS_MAPPINGS["UNETLoader"]()
@@ -173,6 +195,7 @@ class Qwen21Direct:
             seed = random.randint(0, 18446744073709551615)
 
         unet, clip, vae = self._get_models(use_nvfp4_dit, clip_name)
+        t_inf = time.time()
         with self.torch.inference_mode():
             positive, negative = self._encode(clip, prompt, negative_prompt, max(width, height))
             latent = self.EmptyLatent.generate(width, height, batch_size=1)[0]
@@ -180,6 +203,7 @@ class Qwen21Direct:
                 unet, seed, steps, cfg, sampler_name, scheduler, positive, negative, latent, denoise=1.0
             )[0]
             decoded = self.VAEDecode.decode(vae, samples)[0].detach()
+        print(f"inference (encode+sample+decode) took {time.time()-t_inf:.1f}s for {width}x{height}@{steps} steps", flush=True)
         arr = np.array(decoded * 255, dtype=np.uint8)[0]
         buf = pyio.BytesIO()
         Image.fromarray(arr).save(buf, format="PNG")
