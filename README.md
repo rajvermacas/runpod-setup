@@ -116,6 +116,52 @@ Notes:
 - Edit runs are slightly slower than text-to-image (41.5 s vs 33.0 s inference on L4 at 1024²): reference latents extend the sequence.
 - The full ComfyUI UI path supports the same thing: `LoadImage` → `TextEncodeQwenImage21` (images input) → sample with the node's latent output.
 
+## Web UI (FastAPI + Jinja, own backend → Modal)
+
+Custom UI in `web/` — prompt textbox + reference-image upload. The backend spawns a Modal GPU job (`Cls.from_name("qwen21-4bit-direct", "Qwen21Direct")`) and the result page polls until the PNG is ready.
+
+### Prerequisites
+
+```bash
+modal deploy modal_qwen21_direct.py   # one time — backend lookups need a deployed app
+pip install -r web/requirements.txt
+```
+
+### Run
+
+```bash
+python3 -m uvicorn web.app:app --port 8000
+# open http://127.0.0.1:8000
+```
+
+UI-only check with zero GPU spend (placeholder image in ~5 s):
+
+```bash
+MOCK_MODAL=1 python3 -m uvicorn web.app:app --port 8000
+```
+
+### How a generation flows
+
+1. Fill **Prompt** (seed defaults to `0` = random), optionally attach up to **4 reference images** (edit mode follows the first), set size/steps.
+2. **Generate on Modal** → backend spawns the job → redirects to `/result/{call_id}`.
+3. The page auto-refreshes every 4 s while the GPU works (~1–3 min with cold start), then shows the image + **Download PNG**.
+
+| Endpoint | Purpose |
+|---|---|
+| `GET /` | form (prompt + upload) |
+| `POST /generate` | spawn Modal job → 303 to `/result/{call_id}` |
+| `GET /result/{call_id}` | poll (`FunctionCall.from_id().get(timeout=0)`); 202-style wait, then image |
+| `GET /image/{call_id}` | final PNG bytes |
+| `GET /health` | `{"status":"ok"}` for monitors |
+
+### Cheap testing tips
+
+- Size **512×512**, steps **10–15** — biggest cost savers.
+- Keep L4 (default): cheaper **per image** (~$0.025) than T4 (~$0.038) despite the higher hourly rate.
+- Infra is already minimal: 0 warm containers, `scaledown_window=2s`, `max_containers=1`, `max_inputs=1`, 10-min timeout.
+
+Env overrides: `MODAL_APP_NAME`, `MODAL_CLS_NAME`, `MOCK_MODAL=1`.
+
 ## Full ComfyUI UI on Modal (optional)
 
 ```bash
@@ -158,6 +204,7 @@ Select with `MODAL_GPU=T4 modal run modal_qwen21_direct.py ...` (default: L4).
 | `modal_qwen21.py` | alternative: runs ComfyUI as an HTTP server on Modal (`/prompt` REST API) |
 | `qwen21_workflow_api.json` | API-format workflow used by `modal_qwen21.py` |
 | `client_qwen21.py` | local client for the server approach (submit + poll + download) |
+| `web/` | FastAPI + Jinja UI: prompt box + reference upload → backend spawns Modal job (see Web UI section) |
 | `z_image_turbo_jupyter (1).py` | reference notebook the direct pattern was adapted from |
 | `AGENTS.md` | lessons learned (read before editing) |
 
