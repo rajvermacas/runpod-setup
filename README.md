@@ -204,11 +204,60 @@ Edit mode (one 1024² reference) adds ~25% to inference: **41.5 s** on L4 (vs 33
 
 Select with `MODAL_GPU=T4 modal run modal_qwen21_direct.py ...` (default: L4).
 
+## Z-Image-Turbo on T4 (direct nodes)
+
+Branch `zimage-turbo-t4-direct`, entry point `modal_zimage_turbo_direct.py` — same direct-`NODE_CLASS_MAPPINGS` pattern as the Qwen script, but for [Tongyi-MAI/Z-Image-Turbo](https://huggingface.co/Tongyi-MAI/Z-Image-Turbo). GPU default is **T4** (16 GB, $0.59/hr). Text-to-image only (Z-Image-Edit is unreleased, so no `--ref-images` path).
+
+The official repo is diffusers format (~20 GB, not loadable by ComfyUI `UNETLoader` and OOM on T4), so the script uses its official ComfyUI repack `Comfy-Org/z_image_turbo`, auto-downloaded at image build into the Modal Volume `zimage-turbo-comfy-cache`:
+
+| Component | File | Size |
+|---|---|---|
+| Diffusion model (INT8) | `diffusion_models/z_image_turbo_int8_convrot.safetensors` | 6.20 GB |
+| Text encoder (default, template) | `text_encoders/qwen_3_4b_fp8_mixed.safetensors` | 5.63 GB |
+| Text encoder (VRAM-saver) | `text_encoders/qwen_3_4b_fp4_mixed.safetensors` | 3.48 GB |
+| VAE | `vae/ae.safetensors` | 0.34 GB |
+
+Sampling mirrors the official ComfyUI int8 template (`image_z_image_turbo_int8.json`): `EmptySD3LatentImage` → `ModelSamplingAuraFlow` (shift 3) → `KSampler`, negative = `ConditioningZeroOut(positive)`, defaults 8 steps / CFG 1.0 / `res_multistep` + `simple`.
+
+### Execution command
+
+```bash
+# default run (T4, 8 steps / CFG 1 / res_multistep + simple / shift 3) — verified 2026-09-25: 33.8 s inference, 1024×1024 PNG
+modal run modal_zimage_turbo_direct.py \
+  --prompt "cinematic portrait of an astronaut in a neon Tokyo alley, rain reflections, ultra detailed" \
+  --width 1024 --height 1024 --steps 8 --seed 42 \
+  --out zimage_turbo_t4_fixed.png
+
+# extra VRAM headroom on T4 (3.48 GB clip instead of 5.63 GB)
+modal run modal_zimage_turbo_direct.py --prompt "a cat in a spacesuit" \
+  --clip-name qwen_3_4b_fp4_mixed.safetensors --out cat_z.png
+
+# keep the container warm 5 min between runs
+modal run modal_zimage_turbo_direct.py --prompt "..." --scaledown-window 300 --out take2.png
+```
+
+| Flag | Default | Notes |
+|---|---|---|
+| `--prompt` | astronaut example | text prompt (negative is zeroed conditioning — Turbo is guidance-distilled) |
+| `--width/--height` | 1024/1024 | output size exactly |
+| `--steps` | 8 | official template value (9 diffusers steps == 8 DiT forwards) |
+| `--cfg` | 1.0 | keep at 1.0 for Turbo |
+| `--sampler/--scheduler` | `res_multistep`/`simple` | template defaults |
+| `--shift` | 3.0 | `ModelSamplingAuraFlow` shift |
+| `--seed` | 42 | `0` = random seed |
+| `--unet-name` | int8 DiT | `z_image_turbo_bf16.safetensors` needs a bigger GPU |
+| `--clip-name` | `qwen_3_4b_fp8_mixed.safetensors` | `qwen_3_4b_fp4_mixed.safetensors` for extra headroom |
+| `--scaledown-window` | 200 | idle seconds before scale-down |
+| `--out` | `zimage_turbo_direct_out.png` | local output path |
+
+GPU override: `MODAL_GPU=L4 modal run modal_zimage_turbo_direct.py ...`
+
 ## Files
 
 | File | Purpose |
 |---|---|
 | `modal_qwen21_direct.py` | **main entry** — direct ComfyUI nodes (`NODE_CLASS_MAPPINGS` + `torch.inference_mode()`), no server |
+| `modal_zimage_turbo_direct.py` | Z-Image-Turbo entry (branch `zimage-turbo-t4-direct`) — same direct pattern, T4 default, 8-step Turbo sampling |
 | `modal_qwen21.py` | alternative: runs ComfyUI as an HTTP server on Modal (`/prompt` REST API) |
 | `qwen21_workflow_api.json` | API-format workflow used by `modal_qwen21.py` |
 | `client_qwen21.py` | local client for the server approach (submit + poll + download) |
