@@ -252,12 +252,30 @@ modal run modal_zimage_turbo_direct.py --prompt "..." --scaledown-window 300 --o
 
 GPU override: `MODAL_GPU=L4 modal run modal_zimage_turbo_direct.py ...`
 
+## Generic workflow runner (any workflow JSON)
+
+`modal_workflow_direct.py` — runs any ComfyUI workflow file on a Modal GPU
+through ComfyUI's **native execution**: the container boots the ComfyUI server
+and the workflow is run via the official `/prompt` API (history polled,
+images fetched via `/view`) — the same path the UI uses. No re-implemented
+executor.
+
+```bash
+# UI format, incl. subgraph-wrapped official templates (translated to API first)
+modal run modal_workflow_direct.py --workflow image_z_image_turbo_int8.json --prompt "astronaut in neon Tokyo alley" --out turbo.png
+# API format ("Export (API)") — posted as-is
+modal run modal_workflow_direct.py --workflow qwen21_workflow_api.json --prompt "a red fox in a snowy forest" --random-seed --out fox.png
+```
+
+`--prompt` is injected into the positive text encoder (auto-traced via the sampler; `--prompt-node <id|title>` to pick explicitly). Seed priority: explicit `--seed N` > `--seed 0` / `--random-seed` (random) > workflow's own seed (literal, or its randomize-control) > template fallback (random, logged). Models lazy-download on first use from a registry (Qwen-Image 2.1 + Z-Image-Turbo sets) into volume `workflow-comfy-cache`. Overrides: `--steps/--cfg/--sampler/--scheduler/--width/--height/--negative/--unet/--clip/--vae/--ckpt`. L4 default, `MODAL_GPU` override. Verified 2026-09-25 on L4: official Z-Image int8 template (UI+subgraph, template seed) in 38.5 s, Qwen API workflow (`--seed 42`) in 48.4 s — both 1024², correct output.
+
 ## Files
 
 | File | Purpose |
 |---|---|
 | `modal_qwen21_direct.py` | **main entry** — direct ComfyUI nodes (`NODE_CLASS_MAPPINGS` + `torch.inference_mode()`), no server |
 | `modal_zimage_turbo_direct.py` | Z-Image-Turbo entry (branch `zimage-turbo-t4-direct`) — same direct pattern, T4 default, 8-step Turbo sampling |
+| `modal_workflow_direct.py` | generic runner: `--workflow file.json --prompt "..."` executes any API/UI-format workflow on Modal GPU |
 | `modal_qwen21.py` | alternative: runs ComfyUI as an HTTP server on Modal (`/prompt` REST API) |
 | `qwen21_workflow_api.json` | API-format workflow used by `modal_qwen21.py` |
 | `client_qwen21.py` | local client for the server approach (submit + poll + download) |
