@@ -141,7 +141,9 @@ pip install -r web/requirements.txt
 ### Run
 
 ```bash
-python3 -m uvicorn web.app:app --host 0.0.0.0 --port 8001
+uv venv web/.venv  # restart-proof: lives in the repo (gitignored), not /tmp
+uv pip install --python web/.venv/bin/python -r web/requirements.txt
+web/.venv/bin/python -m uvicorn web.app:app --host 0.0.0.0 --port 8001
 # open http://<this-machine-ip>:8001  (e.g. http://192.168.29.75:8001)
 
 # open directly on a mode:
