@@ -53,7 +53,7 @@ APP_NAME = "workflow-direct"
 VOL_NAME = "workflow-comfy-cache"
 COMFY_DIR = "/root/comfy/ComfyUI"
 COMFY_PORT = 8188
-DEFAULT_SCALEDOWN_WINDOW = 200
+DEFAULT_SCALEDOWN_WINDOW = 2
 
 # filename -> (hf repo, path inside repo, path under ComfyUI/models).
 # Covers the Qwen-Image 2.1 and Z-Image-Turbo sets validated in this repo.
@@ -70,6 +70,10 @@ MODEL_FILES = {
         "Comfy-Org/Qwen-Image-2.1",
         "text_encoders/qwen3vl_8b_w4a8.safetensors",
         "text_encoders/qwen3vl_8b_w4a8.safetensors"),
+    "qwen3vl_8b_bf16.safetensors": (
+        "Comfy-Org/Qwen-Image-2.1",
+        "text_encoders/qwen3vl_8b_bf16.safetensors",
+        "text_encoders/qwen3vl_8b_bf16.safetensors"),
     "qwen_image_2.1_vae_bf16.safetensors": (
         "Comfy-Org/Qwen-Image-2.1",
         "vae/qwen_image_2.1_vae_bf16.safetensors",
@@ -131,7 +135,7 @@ def _widget_input_names(cls) -> list[str]:
             if name in UI_ONLY_INPUTS:
                 continue
             t = decl[0] if isinstance(decl, (list, tuple)) and decl else decl
-            if isinstance(t, list) or t in ("INT", "FLOAT", "STRING", "BOOLEAN"):
+            if isinstance(t, list) or t in ("INT", "FLOAT", "STRING", "BOOLEAN", "COMBO"):
                 names.append(name)
             elif t not in LINK_TYPES and not isinstance(t, str):
                 names.append(name)
@@ -239,25 +243,43 @@ def _ui_to_api(ui: dict, node_classes: dict) -> dict:
             continue
         cls = node_classes[ctype]
         inputs: dict = {}
-        names = _widget_input_names(cls)
-        vals = node.get("widgets_values") or []
-        vi = 0
-        for ni, name in enumerate(names):
-            if vi >= len(vals):
-                break
-            inputs[name] = vals[vi]
-            vi += 1
-            # The frontend injects a seed-control widget right after each seed
-            # widget; it is not part of INPUT_TYPES. Skip it only on surplus.
-            if name in ("seed", "noise_seed") and (len(vals) - vi) > (len(names) - ni - 1) \
-                    and isinstance(vals[vi], str) and vals[vi] in SEED_CONTROLS:
+        named = node.get("widgets_values_named")
+        if isinstance(named, dict) and named:
+            # Newer frontends save exact widget names — prefer them over guessing
+            # order. Positional order can differ from INPUT_TYPES (e.g. v3 nodes
+            # like ResolutionSelector) and dynamic combos need their namespaced
+            # sub-widgets ("format.bit_depth") verbatim.
+            for wname, wval in named.items():
+                if wname not in UI_ONLY_INPUTS:
+                    inputs[wname] = wval
+        else:
+            names = _widget_input_names(cls)
+            vals = node.get("widgets_values") or []
+            vi = 0
+            for ni, name in enumerate(names):
+                if vi >= len(vals):
+                    break
+                inputs[name] = vals[vi]
                 vi += 1
+                # The frontend injects a seed-control widget right after each seed
+                # widget; it is not part of INPUT_TYPES. Skip it only on surplus.
+                if name in ("seed", "noise_seed") and (len(vals) - vi) > (len(names) - ni - 1) \
+                        and isinstance(vals[vi], str) and vals[vi] in SEED_CONTROLS:
+                    vi += 1
         api[str(node["id"])] = {"class_type": ctype, "inputs": inputs,
                                 "_title": node.get("title", "")}
-        for v in vals:
-            if isinstance(v, str) and v in SEED_CONTROLS:
-                api[str(node["id"])]["_seed_control"] = v
-                break
+        seed_control = None
+        if isinstance(named, dict):
+            sc = named.get("control_after_generate")
+            if isinstance(sc, str) and sc in SEED_CONTROLS:
+                seed_control = sc
+        if seed_control is None:
+            for v in node.get("widgets_values") or []:
+                if isinstance(v, str) and v in SEED_CONTROLS:
+                    seed_control = v
+                    break
+        if seed_control is not None:
+            api[str(node["id"])]["_seed_control"] = seed_control
     # reroute bypass map: reroute_id -> (origin_id, origin_slot)
     reroutes: dict[int, tuple] = {}
     for node in ui.get("nodes", []):
@@ -476,7 +498,10 @@ def _submit_and_wait(base_url: str, workflow: dict, timeout: int = 600) -> list[
 
     client_id = str(uuid.uuid4())
     r = requests.post(f"{base_url}/prompt", json={"prompt": workflow, "client_id": client_id}, timeout=60)
-    r.raise_for_status()
+    if r.status_code != 200:
+        # Plain RuntimeError on purpose: the local Modal client may not have
+        # `requests` installed, which breaks deserialization of its exceptions.
+        raise RuntimeError(f"ComfyUI rejected the prompt (HTTP {r.status_code}): {r.text[:4000]}")
     prompt_id = r.json()["prompt_id"]
 
     history_url = f"{base_url}/history/{prompt_id}"
@@ -602,6 +627,10 @@ class WorkflowDirect:
         _resolve_seed(api, _find_sampler(api), args)
         _apply_overrides(api, args)
         _ensure_files(api)
+        try:
+            vol.commit()  # persist fresh model downloads even if this run later dies
+        except Exception as exc:
+            print(f"volume commit failed (continuing): {exc}", flush=True)
         _strip_helpers(api)
         t0 = time.time()
         blobs = _submit_and_wait(f"http://127.0.0.1:{COMFY_PORT}", api)
