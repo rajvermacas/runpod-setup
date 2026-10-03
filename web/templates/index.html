@@ -187,29 +187,29 @@ genForm.addEventListener("submit", async (ev) => {
 // OpenRouter prompt enhancement (Generate/Turbo): rewrite -> fill box.
 const enhanceBtn = document.getElementById("enhance-btn");
 const enhanceHint = document.getElementById("enhance-hint");
-enhanceBtn.addEventListener("click", async () => {
+enhanceBtn.addEventListener("click", () => {
   const text = promptEl.value.trim();
   if (!text) { enhanceHint.textContent = "Write a short idea first, then Enhance."; return; }
   enhanceBtn.disabled = true;
   enhanceBtn.classList.add("loading");
   enhanceHint.textContent = "Enhancing… (LLM, no GPU)";
-  try {
-    const r = await fetch("/enhance", {
-      method: "POST", headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({text}),
-    });
-    const st = await r.json();
-    if (!r.ok) { enhanceHint.textContent = "Enhance failed: " + (st.error || r.status); return; }
-    promptEl.value = st.rewritten_prompt || text;
-    enhanceHint.textContent = st.wh_ratio
-      ? "Enhanced. Suggested aspect ratio: " + st.wh_ratio + " — set Width/Height to match."
-      : "Enhanced.";
-  } catch (e) {
-    enhanceHint.textContent = "Enhance failed: network error.";
-  } finally {
-    enhanceBtn.disabled = false;
-    enhanceBtn.classList.remove("loading");
-  }
+  promptEl.value = "";
+  const src = new EventSource("/enhance-stream?text=" + encodeURIComponent(text));
+  const close = () => { src.close(); enhanceBtn.disabled = false; enhanceBtn.classList.remove("loading"); };
+  src.onmessage = (ev) => {
+    let st;
+    try { st = JSON.parse(ev.data); } catch { return; }
+    if (st.error) { enhanceHint.textContent = "Enhance failed: " + st.error; close(); return; }
+    if (st.token) { promptEl.value += st.token; promptEl.scrollTop = promptEl.scrollHeight; }
+    if (st.done) {
+      if (st.rewritten_prompt) promptEl.value = st.rewritten_prompt;
+      enhanceHint.textContent = st.wh_ratio
+        ? "Enhanced. Suggested aspect ratio: " + st.wh_ratio + " — set Width/Height to match."
+        : "Enhanced.";
+      close();
+    }
+  };
+  src.onerror = () => { enhanceHint.textContent = "Enhance failed: network error."; close(); };
 });
 </script>
 </main>

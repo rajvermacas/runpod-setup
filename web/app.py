@@ -494,6 +494,68 @@ async def enhance(request: Request):
                         status_code=502, media_type="application/json")
 
 
+def _stream_tokens(text: str):
+    """Yield SSE data lines: token chunks, then a final JSON envelope."""
+    import json as _json
+    import time as _t
+
+    text = (text or "").strip()
+    if not text:
+        yield 'data: {"error": "nothing to enhance"}\n\n'
+        return
+    if MOCK_MODAL:
+        for w in ("[mock enhanced]", text, "— cinematic light."):
+            yield f"data: {_json.dumps({'token': w + ' '})}\n\n"
+            _t.sleep(0.3)
+        yield f"data: {_json.dumps({'done': True, 'wh_ratio': '16:9'})}\n\n"
+        return
+    if not OPENROUTER_API_KEY:
+        yield 'data: {"error": "OPENROUTER_API_KEY missing"}\n\n'
+        return
+    try:
+        from openai import OpenAI
+
+        client = OpenAI(base_url="https://openrouter.ai/api/v1",
+                        api_key=OPENROUTER_API_KEY, timeout=120)
+        stream = client.chat.completions.create(
+            model=OPENROUTER_MODEL,
+            messages=[{"role": "system", "content": ENHANCE_SYSTEM},
+                      {"role": "user", "content": text}],
+            temperature=0.7, max_tokens=2048, stream=True,
+        )
+        full: list[str] = []
+        for chunk in stream:
+            delta = (chunk.choices[0].delta.content or "") if chunk.choices else ""
+            if delta:
+                full.append(delta)
+                yield f"data: {_json.dumps({'token': delta})}\n\n"
+        content = "".join(full)
+        # Strip fences, then lenient-parse for the ratio (tokens already shown).
+        c = content.strip()
+        if c.startswith("```"):
+            c = re.sub(r"^```(?:json)?\s*", "", c)
+            c = re.sub(r"\s*```$", "", c)
+        ratio = ""
+        rewritten = c
+        try:
+            parsed = _json.loads(c)
+            ratio = str(parsed.get("wh_ratio", ""))
+            rewritten = str(parsed.get("rewritten_prompt", "") or c)
+        except Exception:
+            pass
+        yield f"data: {_json.dumps({'done': True, 'wh_ratio': ratio, 'rewritten_prompt': rewritten})}\n\n"
+    except Exception as e:
+        log.exception("enhance stream failed")
+        yield f"data: {_json.dumps({'error': f'{type(e).__name__}: {e}'})}\n\n"
+
+
+@app.get("/enhance-stream")
+def enhance_stream(text: str = ""):
+    from fastapi.responses import StreamingResponse
+
+    return StreamingResponse(_stream_tokens(text), media_type="text/event-stream")
+
+
 @app.post("/characters/delete")
 async def delete_character(request: Request, name: str = Form("")):
     """Delete a saved character slot (portrait + anchor)."""
