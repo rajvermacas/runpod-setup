@@ -139,6 +139,13 @@ REAL_SKIN = ("natural real skin over the whole visible body, face, neck, arms an
              "redness confined around nostrils, slight facial asymmetry, soft subsurface glow, "
              "subtle film grain, matte natural finish, strictly prohibited: waxy skin, flawless skin, "
              "porcelain skin, airbrushed skin, plastic sheen, ai glow, beauty filter, cgi look")
+
+# Separate feature: body integrity (anatomy + clothing). Split from skin
+# because skin tokens were outvoting the single clothing mention.
+REAL_BODY = ("anatomically correct body with natural proportions, realistic hands, "
+             "fully dressed in the described clothing, coherent limbs, strictly prohibited: "
+             "shirtless, nude, undressed, exposed skin beyond face neck arms and hands, "
+             "deformed anatomy, extra limbs, missing fingers")
 # Form default; BFS_HEADSWAP=1 keeps the earlier single-purpose toggle working
 # by preselecting headswap.
 DEFAULT_MODE = os.environ.get("DEFAULT_MODE", "headswap" if os.environ.get("BFS_HEADSWAP", "") == "1" else "generate")
@@ -706,6 +713,7 @@ async def generate(
     lens: str = Form(""),
     light: str = Form(""),
     realskin: str = Form(""),
+    realbody: str = Form(""),
 ):
     def _form_ctx(error: str, status: int):
         return templates.TemplateResponse(
@@ -842,6 +850,8 @@ async def generate(
         prompt = f"{prompt.strip()}, {LIGHTS[light]}"
     if (realskin or "").strip().lower() in ("1", "on", "true", "yes"):
         prompt = f"{prompt.strip()}, {REAL_SKIN}"
+    if (realbody or "").strip().lower() in ("1", "on", "true", "yes"):
+        prompt = f"{prompt.strip()}, {REAL_BODY}"
     gpu = (gpu or "T4").upper()
     if gpu not in ("T4", "L4"):
         return _form_ctx("GPU must be T4 or L4.", 400)
