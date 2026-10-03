@@ -64,6 +64,8 @@ BFS_MODAL_APP_NAME = os.environ.get("BFS_MODAL_APP_NAME", "bfs-headswap-direct")
 BFS_MODAL_CLS_NAME = os.environ.get("BFS_MODAL_CLS_NAME", "BFSHeadSwapDirect")
 TURBO_MODAL_APP_NAME = os.environ.get("TURBO_MODAL_APP_NAME", "zimage-turbo-direct")
 TURBO_MODAL_CLS_NAME = os.environ.get("TURBO_MODAL_CLS_NAME", "ZImageTurboDirect")
+PE_MODAL_APP_NAME = os.environ.get("PE_MODAL_APP_NAME", "qwen21-pe-rewrite")
+PE_MODAL_CLS_NAME = os.environ.get("PE_MODAL_CLS_NAME", "PERewrite")
 # Official Z-Image-Turbo int8 template defaults (see modal_zimage_turbo_direct.py).
 TURBO_DEFAULTS = dict(steps=8, cfg=1.0, sampler="res_multistep", scheduler="simple",
                       shift=3.0, unet="z_image_turbo_int8_convrot.safetensors",
@@ -98,7 +100,44 @@ MAX_REFS = 4
 MAX_FILE_MB = 10
 
 # call_id -> job dict (in-memory; single-process dev server)
+# image jobs carry png bytes; enhance jobs carry result dict.
 JOBS: dict[str, dict] = {}
+
+# Saved character slots: web/characters/<name>.png|jpg + <name>.txt (identity anchor).
+CHARACTERS_DIR = BASE_DIR / "characters"
+CHARACTERS_DIR.mkdir(exist_ok=True)
+
+
+def _valid_character_name(name: str) -> bool:
+    return bool(name) and len(name) <= 32 and all(c.isalnum() or c in "-_" for c in name)
+
+
+def list_characters() -> list[dict]:
+    """Saved slots: [{"name":..., "identity":..., "has_image":...}], sorted."""
+    out: list[dict] = []
+    if not CHARACTERS_DIR.is_dir():
+        return out
+    for img in sorted(CHARACTERS_DIR.glob("*")):
+        if img.suffix.lower() not in (".png", ".jpg", ".jpeg", ".webp") or not img.is_file():
+            continue
+        txt = img.with_suffix(".txt")
+        out.append({
+            "name": img.stem,
+            "identity": txt.read_text().strip() if txt.is_file() else "",
+            "has_image": True,
+        })
+    return out
+
+
+def load_character(name: str) -> tuple[bytes, str]:
+    """Return (image bytes, identity text) for a saved slot; raises ValueError."""
+    for c in list_characters():
+        if c["name"] == name:
+            for ext in (".png", ".jpg", ".jpeg", ".webp"):
+                p = CHARACTERS_DIR / f"{name}{ext}"
+                if p.is_file():
+                    return p.read_bytes(), c["identity"]
+    raise ValueError(f"unknown character: {name!r}")
 
 app = FastAPI(title="Qwen-Image 2.1 web UI")
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
@@ -133,13 +172,29 @@ def _mock_png(prompt: str, width: int = 512, height: int = 512) -> bytes:
 
 
 def _spawn_modal(prompt: str, negative: str, width: int, height: int,
-                 seed: int, steps: int, refs: list[bytes], mode: str) -> str:
-    """Spawn a Modal job, return the FunctionCall id."""
+                 seed: int, steps: int, refs: list[bytes], mode: str,
+                 char_image: bytes | None = None, identity: str = "") -> str:
+    """Spawn a Modal job, return the FunctionCall id.
+
+    char_image/identity come from a saved character slot: the portrait is
+    appended as an identity reference and the anchor text is injected.
+    In headswap mode the slot portrait serves as the head (<image2>), so a
+    single body upload suffices.
+    """
     t0 = time.time()
+    refs = list(refs)
+    if identity:
+        prompt = f"{prompt.strip()}\nSame identity: {identity.strip()}"
+    if mode == "headswap" and char_image is not None:
+        if not refs:
+            raise ValueError("head-swap with a character needs 1 body upload (the head comes from the slot)")
+        refs = [refs[0], char_image]  # extra uploads ignored, logged below
+    elif char_image is not None and len(refs) < MAX_REFS:
+        refs.append(char_image)
     if MOCK_MODAL:
         call_id = f"mock-{uuid.uuid4().hex[:12]}"
         JOBS[call_id] = {
-            "status": "pending", "png": None, "error": None,
+            "status": "pending", "png": None, "error": None, "kind": "image",
             "prompt": prompt, "negative": negative,
             "width": width, "height": height, "seed": seed, "steps": steps,
             "mode": mode,
@@ -182,7 +237,7 @@ def _spawn_modal(prompt: str, negative: str, width: int, height: int,
         )
     call_id: str = call.object_id
     JOBS[call_id] = {
-        "status": "pending", "png": None, "error": None,
+        "status": "pending", "png": None, "error": None, "kind": "image",
         "prompt": prompt, "negative": negative,
         "width": width, "height": height, "seed": seed, "steps": steps,
         "mode": mode,
@@ -191,6 +246,35 @@ def _spawn_modal(prompt: str, negative: str, width: int, height: int,
     }
     log.info("spawn modal call_id=%s mode=%s prompt=%.60r %dx%d steps=%d seed=%d refs=%d (%.2fs)",
              call_id, mode, prompt, width, height, steps, seed, len(refs), time.time() - t0)
+    return call_id
+
+
+def _spawn_enhance(text: str) -> str:
+    """Spawn a PE-T2I rewrite job, return the FunctionCall id."""
+    t0 = time.time()
+    text = (text or "").strip()
+    if not text:
+        raise ValueError("nothing to enhance: prompt is empty")
+    if MOCK_MODAL:
+        call_id = f"mock-{uuid.uuid4().hex[:12]}"
+        JOBS[call_id] = {
+            "status": "pending", "result": None, "error": None, "kind": "enhance",
+            "prompt": text, "created": time.time(), "mock": True,
+        }
+        log.info("spawn mock enhance call_id=%s text=%.60r (%.2fs)",
+                 call_id, text, time.time() - t0)
+        return call_id
+    import modal
+
+    cls = modal.Cls.from_name(PE_MODAL_APP_NAME, PE_MODAL_CLS_NAME)
+    call = cls().rewrite.spawn(text)
+    call_id: str = call.object_id
+    JOBS[call_id] = {
+        "status": "pending", "result": None, "error": None, "kind": "enhance",
+        "prompt": text, "created": time.time(), "mock": False,
+    }
+    log.info("spawn modal enhance call_id=%s text=%.60r (%.2fs)",
+             call_id, text, time.time() - t0)
     return call_id
 
 
@@ -217,31 +301,39 @@ def _previews(refs: list[bytes], limit: int = 4) -> list[str]:
 
 
 def _poll_modal(call_id: str) -> None:
-    """Poll once; on success store PNG and mark done, on Timeout leave pending."""
+    """Poll once; on success store the result and mark done, on Timeout leave pending."""
     job = JOBS.get(call_id)
     if job is None or job["status"] != "pending":
         return
     elapsed = time.time() - job["created"]
+    kind = job.get("kind", "image")
     if job.get("mock"):
-        # simulate ~5 s GPU delay so polling UI can be exercised
-        if time.time() - job["created"] < 5:
+        # simulate GPU delay so polling UI can be exercised (shorter for text)
+        if time.time() - job["created"] < (3 if kind == "enhance" else 5):
             log.debug("poll %s still pending (mock, %.0fs)", call_id, elapsed)
             return
         try:
-            job["png"] = _mock_png(job["prompt"], job["width"], job["height"])
+            if kind == "enhance":
+                job["result"] = {
+                    "rewritten_prompt": f"[mock enhanced] {job['prompt']} — cinematic light, "
+                                        "shallow depth of field, ultra detailed",
+                    "wh_ratio": "16:9",
+                }
+            else:
+                job["png"] = _mock_png(job["prompt"], job["width"], job["height"])
             job["status"] = "done"
         except Exception as e:
             job["status"] = "error"
             job["error"] = str(e)
             log.exception("poll %s mock render failed", call_id)
             return
-        log.info("poll %s done (mock, %.0fs, %d bytes)", call_id, elapsed, len(job["png"]))
+        log.info("poll %s done (mock, %.0fs)", call_id, elapsed)
         return
     try:
         import modal
 
         fc = modal.FunctionCall.from_id(call_id)
-        png = fc.get(timeout=0)  # raises TimeoutError while running
+        out = fc.get(timeout=0)  # raises TimeoutError while running
     except TimeoutError:
         log.debug("poll %s still pending (%.0fs)", call_id, elapsed)
         return
@@ -250,7 +342,13 @@ def _poll_modal(call_id: str) -> None:
         job["error"] = f"{type(e).__name__}: {e}"
         log.exception("poll %s failed after %.0fs", call_id, elapsed)
         return
-    job["png"] = bytes(png)
+    if kind == "enhance":
+        job["result"] = dict(out)
+        job["status"] = "done"
+        log.info("poll %s done enhance (%.0fs, ratio=%s)", call_id, elapsed,
+                 job["result"].get("wh_ratio", "?"))
+        return
+    job["png"] = bytes(out)
     job["status"] = "done"
     log.info("poll %s done (%.0fs, %d bytes)", call_id, elapsed, len(job["png"]))
 
@@ -261,7 +359,8 @@ def index(request: Request, mode: str = ""):
     return templates.TemplateResponse(
         request, "index.html",
         {"mode": mode, "modes": MODES, "mode_prompts": MODE_DEFAULT_PROMPTS,
-         "default_prompt": MODE_DEFAULT_PROMPTS[mode]},
+         "default_prompt": MODE_DEFAULT_PROMPTS[mode],
+         "characters": list_characters(), "character": ""},
     )
 
 
@@ -269,14 +368,85 @@ def index(request: Request, mode: str = ""):
 def health():
     return {"status": "ok", "modal_app": MODAL_APP_NAME,
             "bfs_modal_app": BFS_MODAL_APP_NAME,
-            "turbo_modal_app": TURBO_MODAL_APP_NAME, "mock": MOCK_MODAL,
-            "modes": list(MODES), "default_mode": DEFAULT_MODE}
+            "turbo_modal_app": TURBO_MODAL_APP_NAME,
+            "pe_modal_app": PE_MODAL_APP_NAME, "mock": MOCK_MODAL,
+            "modes": list(MODES), "default_mode": DEFAULT_MODE,
+            "characters": len(list_characters())}
+
+
+@app.post("/characters")
+async def save_character(
+    request: Request,
+    name: str = Form(""),
+    identity: str = Form(""),
+):
+    """Save a portrait + identity anchor as a reusable character slot."""
+    client = request.client.host if request.client else "?"
+    name = (name or "").strip().lower()
+    identity = (identity or "").strip()
+    if not _valid_character_name(name):
+        log.warning("POST /characters from %s rejected: bad name %r", client, name)
+        return RedirectResponse(url="/", status_code=303)
+    form = await request.form()
+    upload = next((v for k, v in form.multi_items()
+                   if k == "portrait" and isinstance(v, StarletteUploadFile) and v.filename), None)
+    if upload is None:
+        return RedirectResponse(url="/", status_code=303)
+    data = await upload.read()
+    if not data or len(data) > MAX_FILE_MB * 1024 * 1024 or not _is_image(data):
+        log.warning("POST /characters from %s rejected: bad portrait for %r", client, name)
+        return RedirectResponse(url="/", status_code=303)
+    from PIL import Image
+
+    img = Image.open(io.BytesIO(data))
+    ext = ".png" if (img.mode in ("RGBA", "LA") or "transparency" in img.info) else ".jpg"
+    for old in CHARACTERS_DIR.glob(f"{name}.*"):
+        old.unlink()
+    (CHARACTERS_DIR / f"{name}{ext}").write_bytes(data)
+    (CHARACTERS_DIR / f"{name}.txt").write_text(identity + "\n" if identity else "")
+    log.info("POST /characters from %s saved slot %r (%d KB)", client, name, len(data) // 1024)
+    return RedirectResponse(url=f"/?mode=generate", status_code=303)
+
+
+@app.post("/enhance")
+async def enhance(request: Request):
+    """PE-T2I rewrite: {text} -> {call_id}; poll GET /enhance/{call_id}."""
+    try:
+        body = await request.json()
+        text = (body.get("text") or "")
+    except Exception:
+        return Response('{"error": "invalid JSON"}', status_code=400, media_type="application/json")
+    try:
+        call_id = await run_in_threadpool(_spawn_enhance, text)
+    except ValueError as e:
+        return Response(f'{{"error": "{e}"}}', status_code=400, media_type="application/json")
+    except Exception as e:
+        log.exception("POST /enhance spawn failed")
+        return Response(f'{{"error": "spawn failed: {type(e).__name__}: {e}"}}',
+                        status_code=502, media_type="application/json")
+    return {"call_id": call_id}
+
+
+@app.get("/enhance/{call_id}")
+def enhance_status(call_id: str):
+    job = JOBS.get(call_id)
+    if job is None or job.get("kind") != "enhance":
+        return Response('{"error": "unknown enhance job"}', status_code=404,
+                        media_type="application/json")
+    _poll_modal(call_id)
+    if job["status"] == "done":
+        return {"status": "done", **(job["result"] or {})}
+    if job["status"] == "error":
+        return Response(f'{{"status": "error", "error": "{job["error"]}"}}',
+                        status_code=502, media_type="application/json")
+    return {"status": "pending"}
 
 
 @app.post("/generate")
 async def generate(
     request: Request,
     mode: str = Form("generate"),
+    character: str = Form(""),
     prompt: str = Form(""),
     negative_prompt: str = Form(""),
     width: int = Form(1024),
@@ -289,7 +459,8 @@ async def generate(
             request, "index.html",
             {"error": error, "mode": mode if mode in MODES else DEFAULT_MODE,
              "modes": MODES, "mode_prompts": MODE_DEFAULT_PROMPTS,
-             "default_prompt": prompt or MODE_DEFAULT_PROMPTS.get(mode, "")},
+             "default_prompt": prompt or MODE_DEFAULT_PROMPTS.get(mode, ""),
+             "characters": list_characters(), "character": character},
             status_code=status,
         )
 
@@ -304,6 +475,14 @@ async def generate(
     if not prompt:
         log.warning("POST /generate from %s rejected: empty prompt", client)
         return _form_ctx("Prompt is required.", 400)
+    char_image: bytes | None = None
+    identity = ""
+    if character:
+        try:
+            char_image, identity = load_character(character)
+        except ValueError as e:
+            log.warning("POST /generate from %s rejected: %s", client, e)
+            return _form_ctx(str(e), 400)
     width = max(256, min(width, 2048))
     height = max(256, min(height, 2048))
     steps = max(1, min(steps, 100))
@@ -346,24 +525,26 @@ async def generate(
             return _form_ctx(f"{f.filename}: not a valid image file.", 400)
         refs.append(data)
         ref_names.append(f"{f.filename} ({len(data) // 1024} KB)")
-    log.info("POST /generate from %s mode=%s prompt=%.80r %dx%d steps=%d seed=%d refs=[%s]",
-             client, mode, prompt, width, height, steps, seed, ", ".join(ref_names) or "none")
+    log.info("POST /generate from %s mode=%s char=%s prompt=%.80r %dx%d steps=%d seed=%d refs=[%s]",
+             client, mode, character or "none", prompt, width, height, steps, seed,
+             ", ".join(ref_names) or "none")
 
-    if mode == "turbo" and refs:
+    if mode == "turbo" and (refs or char_image is not None):
         log.warning("POST /generate from %s rejected: turbo takes no reference images", client)
         return _form_ctx(
-            "Turbo is text-to-image only — remove reference images or switch to Edit mode.", 400)
+            "Turbo is text-to-image only — remove reference images and the character, or switch mode.", 400)
 
-    if mode == "headswap" and len(refs) < 2:
-        log.warning("POST /generate from %s rejected: head-swap needs 2 images, got %d",
-                    client, len(refs))
+    if mode == "headswap" and (len(refs) + (1 if char_image is not None else 0)) < 2:
+        log.warning("POST /generate from %s rejected: head-swap needs 2 images, got %d uploads + %s slot",
+                    client, len(refs), "1" if char_image is not None else "0")
         return _form_ctx(
-            "Upload exactly 2 images: body/target first, reference head second.", 400)
+            "Head-swap needs a body upload plus a head: either upload 2 images, or upload 1 body and pick a character slot as the head.", 400)
 
     try:
         # blocking Modal network call -> threadpool, taaki event loop block na ho
         call_id = await run_in_threadpool(
-            _spawn_modal, prompt, negative_prompt.strip(), width, height, seed, steps, refs, mode
+            _spawn_modal, prompt, negative_prompt.strip(), width, height, seed, steps,
+            refs, mode, char_image, identity,
         )
     except Exception as e:
         log.exception("POST /generate spawn failed for %s", client)

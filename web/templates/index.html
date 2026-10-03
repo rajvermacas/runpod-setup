@@ -20,9 +20,23 @@
       <option value="turbo" {% if mode == "turbo" %}selected{% endif %}>Turbo — Z-Image-Turbo, 8 steps</option>
     </select>
 
+    <div id="char-block">
+      <label for="character">Character <span class="opt">(optional — saved face auto-attached + identity injected; in Head-swap it becomes the head)</span></label>
+      <select id="character" name="character">
+        <option value="">No character — fresh generation</option>
+        {% for c in characters %}
+        <option value="{{ c.name }}" {% if character == c.name %}selected{% endif %}>{{ c.name }}{% if c.identity %} — {{ c.identity[:60] }}{% endif %}</option>
+        {% endfor %}
+      </select>
+    </div>
+
     <label for="prompt">Prompt</label>
-    <textarea id="prompt" name="prompt" rows="4"
-      placeholder="cinematic photorealistic portrait, soft golden light, ultra detailed">{{ default_prompt }}</textarea>
+    <div class="prompt-row">
+      <textarea id="prompt" name="prompt" rows="4"
+        placeholder="cinematic photorealistic portrait, soft golden light, ultra detailed">{{ default_prompt }}</textarea>
+      <button type="button" id="enhance-btn" title="Rewrite with PE-T2I">Enhance</button>
+    </div>
+    <p class="hint" id="enhance-hint"></p>
 
     <div id="refs-block">
       <label for="ref_images">Reference images <span class="opt" id="refs-hint"></span></label>
@@ -43,6 +57,19 @@
 
     <button type="submit">Generate on Modal</button>
   </form>
+  <details>
+    <summary>Save a character slot</summary>
+    <p class="hint">Upload a front-facing portrait once — it stays on the server and appears in the Character dropdown above. Fictional faces only.</p>
+    <form action="/characters" method="post" enctype="multipart/form-data">
+      <label for="char-name">Slot name <span class="opt">(letters, numbers, dash)</span></label>
+      <input id="char-name" name="name" type="text" maxlength="32" required placeholder="anya">
+      <label for="char-portrait">Portrait</label>
+      <input id="char-portrait" name="portrait" type="file" accept="image/*" required>
+      <label for="char-identity">Identity anchor <span class="opt">(injected into every prompt using this slot)</span></label>
+      <input id="char-identity" name="identity" type="text" maxlength="300" placeholder="early 30s, sharp jaw, freckles across nose, short black bob">
+      <button type="submit">Save character</button>
+    </form>
+  </details>
   <p class="hint" id="mode-hint"></p>
 <script>
 const MODE_PROMPTS = {{ mode_prompts | tojson }};
@@ -51,25 +78,25 @@ const INFO = {
     sub: "Text-to-image on Modal GPU (Qwen-Image 2.1 4-bit).",
     refs: "(optional — any refs act as edit references)",
     hint: "Inference takes ~30–60 s on L4 plus cold start. You’ll get a polling page — keep it open.",
-    promptRequired: true, steps: 20, seed: 0, showRefs: true, showNeg: true,
+    promptRequired: true, steps: 20, seed: 0, showRefs: true, showNeg: true, showChar: true,
   },
   edit: {
     sub: "Edit with reference photos. Output follows the first reference.",
     refs: "(optional, up to 4 — edit mode follows the first)",
     hint: "Edit runs slightly slower (~40 s on L4): reference latents extend the sequence.",
-    promptRequired: true, steps: 20, seed: 0, showRefs: true, showNeg: true,
+    promptRequired: true, steps: 20, seed: 0, showRefs: true, showNeg: true, showChar: true,
   },
   headswap: {
     sub: "BFS head-swap LoRA: body/target first, reference head second.",
-    refs: "(required, exactly 2 — body/target first, reference head second)",
+    refs: "(required — upload the body, or pick a character slot as the head)",
     hint: "Head-swap takes ~50 s on L4 at 25 steps. No public figures without consent.",
-    promptRequired: false, steps: 25, seed: 42, showRefs: true, showNeg: true,
+    promptRequired: false, steps: 25, seed: 42, showRefs: true, showNeg: true, showChar: true,
   },
   turbo: {
     sub: "Z-Image-Turbo: 8-step text-to-image on T4. No reference images.",
     refs: "",
     hint: "Turbo is guidance-distilled: negative prompt is ignored, ~35 s on T4 at 1024².",
-    promptRequired: true, steps: 8, seed: 0, showRefs: false, showNeg: false,
+    promptRequired: true, steps: 8, seed: 0, showRefs: false, showNeg: false, showChar: false,
   },
 };
 const modeEl = document.getElementById("mode");
@@ -82,6 +109,8 @@ function applyMode(setDefaults) {
   document.getElementById("mode-hint").textContent = info.hint;
   document.getElementById("refs-block").style.display = info.showRefs ? "" : "none";
   document.getElementById("neg-block").style.display = info.showNeg ? "" : "none";
+  document.getElementById("char-block").style.display = info.showChar ? "" : "none";
+  document.getElementById("enhance-btn").style.display = (m === "generate" || m === "turbo") ? "" : "none";
   promptEl.required = info.promptRequired;
   if (setDefaults) {
     // Swap in the new mode's default prompt — unless the user typed their
@@ -97,6 +126,41 @@ function applyMode(setDefaults) {
 }
 modeEl.addEventListener("change", () => applyMode(true));
 applyMode(false);
+
+// PE-T2I prompt enhancement (Generate/Turbo): rewrite -> fill box, show ratio.
+const enhanceBtn = document.getElementById("enhance-btn");
+const enhanceHint = document.getElementById("enhance-hint");
+enhanceBtn.addEventListener("click", async () => {
+  const text = promptEl.value.trim();
+  if (!text) { enhanceHint.textContent = "Write a short idea first, then Enhance."; return; }
+  enhanceBtn.disabled = true;
+  enhanceHint.textContent = "Enhancing on Modal GPU…";
+  try {
+    const r = await fetch("/enhance", {
+      method: "POST", headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({text}),
+    });
+    if (!r.ok) { enhanceHint.textContent = "Enhance failed (HTTP " + r.status + ")."; return; }
+    const {call_id} = await r.json();
+    for (let i = 0; i < 90; i++) {
+      await new Promise(res => setTimeout(res, 2000));
+      const s = await fetch("/enhance/" + call_id);
+      if (!s.ok) { enhanceHint.textContent = "Enhance failed (HTTP " + s.status + ")."; return; }
+      const st = await s.json();
+      if (st.status === "done") {
+        promptEl.value = st.rewritten_prompt || text;
+        enhanceHint.textContent = st.wh_ratio
+          ? "Enhanced. Suggested aspect ratio: " + st.wh_ratio + " — set Width/Height to match."
+          : "Enhanced.";
+        return;
+      }
+      if (st.status === "error") { enhanceHint.textContent = "Enhance failed."; return; }
+    }
+    enhanceHint.textContent = "Enhance timed out — try again.";
+  } finally {
+    enhanceBtn.disabled = false;
+  }
+});
 </script>
 </main>
 </body>
