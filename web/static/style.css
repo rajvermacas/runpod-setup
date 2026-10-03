@@ -235,15 +235,59 @@ a:hover { text-decoration: underline; text-decoration-color: var(--dim); }
 /* Result: image is the hero, full tray width */
 img.out { width: 100%; border: 1px solid var(--line); border-radius: 2px; margin-top: 1.25rem; }
 
-/* Result lightbox: click image for fullscreen, click/Esc to close */
-.lightbox {
-  position: fixed; inset: 0; z-index: 50;
+/* Click-to-zoom for .zoomable images (script: /static/zoom.js) */
+.zoomable { cursor: zoom-in; }
+body.zoom-open { overflow: hidden; }
+
+.zoom-modal {
+  position: fixed; inset: 0; z-index: 100;
   background: rgba(5, 7, 11, 0.94);
   display: flex; align-items: center; justify-content: center;
-  padding: 2rem; cursor: zoom-out;
+  overflow: hidden;
+  touch-action: none;
 }
-.lightbox[hidden] { display: none; }
-.lightbox img { max-width: 100%; max-height: 100%; border: 1px solid var(--line); }
+.zoom-modal[hidden] { display: none; }
+.zoom-stage {
+  position: absolute; inset: 0;
+  display: flex; align-items: center; justify-content: center;
+}
+.zoom-stage.grab { cursor: grab; }
+.zoom-stage.grabbing { cursor: grabbing; }
+.zoom-img {
+  max-width: 92vw; max-height: 88vh;
+  border: 1px solid var(--line); border-radius: 2px;
+  transform-origin: center center;
+  will-change: transform;
+  user-select: none; -webkit-user-drag: none;
+}
+.zoom-x {
+  position: absolute; top: 1rem; right: 1rem; z-index: 2;
+  margin: 0; padding: 0;
+  width: 2.6rem; height: 2.6rem;
+  border: 1px solid var(--line); border-radius: 50%;
+  background: var(--tray); color: var(--ink);
+  font-size: 1.15rem; line-height: 1;
+}
+.zoom-x:hover { background: #101726; border-color: var(--dim); }
+.zoom-tools {
+  position: absolute; right: 1rem; bottom: 1rem; z-index: 2;
+  display: flex; align-items: center; gap: 0.35rem;
+  padding: 0.3rem 0.45rem;
+  background: var(--tray);
+  border: 1px solid var(--line); border-radius: 999px;
+}
+.zoom-tools button {
+  margin: 0; padding: 0.3rem 0.7rem; min-width: 2.2rem;
+  background: transparent; color: var(--ink);
+  border: 1px solid var(--line); border-radius: 999px;
+  font-size: 0.88rem; font-weight: 600; line-height: 1.2;
+}
+.zoom-tools button:hover { background: #101726; border-color: var(--dim); }
+.zoom-level {
+  min-width: 4ch; text-align: center;
+  color: var(--dim); font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
+}
 
 .refs { display: flex; gap: 0.6rem; margin-top: 0.75rem; flex-wrap: wrap; }
 .refs img { height: 76px; border: 1px solid var(--line); border-radius: 2px; }
@@ -265,6 +309,69 @@ details ul { color: var(--dim); }
 .guide ul { margin: 0 0 0.5rem; padding-left: 1.1rem; color: var(--dim); font-size: 0.88rem; }
 .guide li { margin: 0.15rem 0; }
 .guide b { color: var(--ink); font-weight: 600; }
+
+/* Top navigator: Create | i2i (underline tabs, signal-blue active) */
+.topnav {
+  display: flex; gap: 0.2rem;
+  margin: -0.35rem 0 1.4rem;
+  border-bottom: 1px solid var(--line);
+}
+.topnav a {
+  padding: 0.55rem 1.05rem;
+  margin-bottom: -1px;
+  color: var(--dim);
+  font-weight: 600; font-size: 0.95rem;
+  border-bottom: 2px solid transparent;
+}
+.topnav a:hover { color: var(--ink); text-decoration: none; }
+.topnav a.on { color: var(--ink); border-bottom-color: var(--safe); }
+
+/* i2i sub-tabs: pill row under the section intro */
+.subnav { display: flex; gap: 0.4rem; margin: 0 0 1.4rem; }
+.subnav a {
+  padding: 0.34rem 0.9rem;
+  border: 1px solid var(--line); border-radius: 999px;
+  color: var(--dim); font-size: 0.88rem; font-weight: 500;
+}
+.subnav a:hover { border-color: var(--dim); color: var(--ink); text-decoration: none; }
+.subnav a.on { background: var(--safe); border-color: var(--safe); color: #0b0e14; font-weight: 600; }
+
+.section[hidden], .tool[hidden] { display: none; }
+.tool-title {
+  font-family: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+  font-size: 1.3rem; font-weight: 600;
+  margin: 0 0 0.9rem;
+}
+
+/* i2i upload slots: base/reference side by side */
+.upload-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.9rem; }
+.upcard {
+  min-width: 0;
+  padding: 0.8rem;
+  background: var(--field);
+  border: 1px solid var(--line); border-radius: 3px;
+}
+.upcard label { margin-bottom: 0.5rem; }
+.upcard input[type="file"] { width: 100%; }
+.up-preview {
+  display: block; width: 100%;
+  margin-top: 0.6rem;
+  border: 1px solid var(--line); border-radius: 2px;
+}
+.up-preview[hidden] { display: none; }
+.check-row { display: flex; gap: 1.4rem; align-items: center; }
+
+/* i2i inline result panel (spinner -> image, no page reload) */
+.i2i-result { border-top: 1px solid var(--line); padding-top: 1rem; }
+.i2i-result[hidden] { display: none; }
+.i2i-result img { width: 100%; border: 1px solid var(--line); border-radius: 2px; }
+.spin-row { display: flex; align-items: center; gap: 0.7rem; color: var(--dim); }
+.mini-spinner {
+  width: 1.1rem; height: 1.1rem; flex: none;
+  border: 2px solid var(--line); border-top-color: var(--safe);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
 
 /* App shell: form column + live queue rail */
 .shell {
@@ -348,9 +455,11 @@ details ul { color: var(--dim); }
 
 @media (max-width: 560px) {
   .grid { grid-template-columns: 1fr 1fr; }
+  .upload-grid { grid-template-columns: 1fr; }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .spinner { animation: none; border-top-color: var(--line); border-right-color: var(--safe); }
+  .mini-spinner { animation: none; border-top-color: var(--line); border-right-color: var(--safe); }
   *, *::before, *::after { transition: none !important; }
 }

@@ -5,18 +5,25 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Qwen-Image 2.1 + BFS Head-Swap + Z-Turbo — generate</title>
 <link rel="stylesheet" href="/static/style.css">
+<script src="/static/zoom.js"></script>
 </head>
 <body>
 <div class="shell">
 <main class="card">
-  <h1>Generate on Modal</h1>  <p class="sub" id="mode-sub"></p>
+  <nav class="topnav" aria-label="Sections">
+    <a href="/?section=create" class="{% if section == 'create' %}on{% endif %}">Create</a>
+    <a href="/?section=i2i&amp;tool={{ tool if section == 'i2i' else 'edit' }}" class="{% if section == 'i2i' %}on{% endif %}">i2i</a>
+  </nav>
   {% if error %}<p class="error">{{ error }}</p>{% endif %}
+
+  <section class="section" id="section-create"{% if section != "create" %} hidden{% endif %}>
+  <h1>Generate on Modal</h1>  <p class="sub" id="mode-sub"></p>
   <form id="gen-form" action="/generate" method="post" enctype="multipart/form-data">
+    <input type="hidden" name="section" value="create">
+    <input type="hidden" name="tool" value="">
     <label for="mode">Mode</label>
     <select id="mode" name="mode">
       <option value="generate" {% if mode == "generate" %}selected{% endif %}>Generate — Qwen-Image 2.1 text-to-image</option>
-      <option value="edit" {% if mode == "edit" %}selected{% endif %}>Edit — Qwen with reference photos</option>
-      <option value="headswap" {% if mode == "headswap" %}selected{% endif %}>Head-swap — BFS LoRA (2 images)</option>
       <option value="turbo" {% if mode == "turbo" %}selected{% endif %}>Turbo — Z-Image-Turbo, 8 steps</option>
     </select>
 
@@ -86,7 +93,7 @@
     </div>
 
     <div id="char-block">
-      <label for="character">Character <span class="opt">(optional — saved angles auto-attach + identity injected; in Head-swap angle-1 becomes the head)</span></label>
+      <label for="character">Character <span class="opt">(optional — saved angles auto-attach + identity injected)</span></label>
       <select id="character" name="character">
         <option value="">No character — fresh generation</option>
         {% for c in characters %}
@@ -230,6 +237,100 @@
     </div>
   </details>
   <p class="hint" id="mode-hint"></p>
+  </section>
+
+  <section class="section" id="section-i2i"{% if section != "i2i" %} hidden{% endif %}>
+  <h1>i2i — image to image</h1>
+  <p class="sub">Edit with reference photos, swap clothing and/or pose between two photos, or head-swap. Each tool renders its result inline below the form — no page reload.</p>
+  <nav class="subnav" aria-label="i2i tools">
+    <a href="/?section=i2i&amp;tool=edit" class="{% if tool == 'edit' %}on{% endif %}">Edit</a>
+    <a href="/?section=i2i&amp;tool=swap" class="{% if tool == 'swap' %}on{% endif %}">Swap</a>
+    <a href="/?section=i2i&amp;tool=face-swap" class="{% if tool == 'face-swap' %}on{% endif %}">Face Swap</a>
+  </nav>
+
+  {% set edit_prompt = default_prompt if (section == "i2i" and tool == "edit") else mode_prompts["edit"] %}
+  {% set swap_prompt = default_prompt if (section == "i2i" and tool == "swap") else swap_prompts["both"] %}
+  {% set faceswap_prompt = default_prompt if (section == "i2i" and tool == "face-swap") else headswap_default_prompt %}
+
+  <div class="tool" id="tool-edit"{% if tool != "edit" %} hidden{% endif %}>
+    <h2 class="tool-title">Edit — prompt-driven image edit</h2>
+    <form class="tool-form" id="i2i-edit-form" action="/generate" method="post" enctype="multipart/form-data">
+      <input type="hidden" name="mode" value="edit">
+      <input type="hidden" name="section" value="i2i">
+      <input type="hidden" name="tool" value="edit">
+      <div class="upcard">
+        <label for="edit-refs">Reference images <span class="opt">(up to 4 — output follows the first)</span></label>
+        <input id="edit-refs" name="ref_images" type="file" accept="image/*" multiple>
+      </div>
+      <label for="edit-prompt">Prompt</label>
+      <textarea id="edit-prompt" name="prompt" rows="4" placeholder="describe the edit…">{{ edit_prompt }}</textarea>
+      <div class="btn-row"><button type="submit">Generate</button></div>
+      <div class="i2i-result" id="i2i-edit-result" hidden></div>
+    </form>
+  </div>
+
+  <div class="tool" id="tool-swap"{% if tool != "swap" %} hidden{% endif %}>
+    <h2 class="tool-title">Swap — clothes and/or pose</h2>
+    <form class="tool-form" id="i2i-swap-form" action="/generate" method="post" enctype="multipart/form-data">
+      <input type="hidden" name="mode" value="edit">
+      <input type="hidden" name="section" value="i2i">
+      <input type="hidden" name="tool" value="swap">
+      <div class="upload-grid">
+        <div class="upcard">
+          <label for="swap-base">Base image <span class="opt">(the person to modify)</span></label>
+          <input id="swap-base" name="ref_images" type="file" accept="image/*" required>
+          <img class="up-preview" id="swap-base-preview" alt="base preview" hidden>
+        </div>
+        <div class="upcard">
+          <label for="swap-ref">Reference image <span class="opt">(source of the clothes / pose)</span></label>
+          <input id="swap-ref" name="ref_images" type="file" accept="image/*" required>
+          <img class="up-preview" id="swap-ref-preview" alt="reference preview" hidden>
+        </div>
+      </div>
+      <div class="check-row">
+        <label class="check"><input type="checkbox" id="swap-clothes" name="swap_clothes" value="1" checked> Clothes</label>
+        <label class="check"><input type="checkbox" id="swap-pose" name="swap_pose" value="1" checked> Pose</label>
+      </div>
+      <label for="swap-prompt">Prompt</label>
+      <textarea id="swap-prompt" name="prompt" rows="4">{{ swap_prompt }}</textarea>
+      <div class="btn-row"><button type="submit" id="swap-submit">Generate</button></div>
+      <p class="hint" id="swap-hint" aria-live="polite"></p>
+      <div class="i2i-result" id="i2i-swap-result" hidden></div>
+    </form>
+  </div>
+
+  <div class="tool" id="tool-face-swap"{% if tool != "face-swap" %} hidden{% endif %}>
+    <h2 class="tool-title">Face Swap — body + head</h2>
+    <form class="tool-form" id="i2i-faceswap-form" action="/generate" method="post" enctype="multipart/form-data">
+      <input type="hidden" name="mode" value="headswap">
+      <input type="hidden" name="section" value="i2i">
+      <input type="hidden" name="tool" value="face-swap">
+      <div class="upload-grid">
+        <div class="upcard">
+          <label for="fs-body">Body image <span class="opt">(required — the body/scene to keep)</span></label>
+          <input id="fs-body" name="ref_images" type="file" accept="image/*" required>
+          <img class="up-preview" id="fs-body-preview" alt="body preview" hidden>
+        </div>
+        <div class="upcard">
+          <label for="fs-head">Head image <span class="opt">(optional if a character slot is chosen)</span></label>
+          <input id="fs-head" name="ref_images" type="file" accept="image/*">
+          <img class="up-preview" id="fs-head-preview" alt="head preview" hidden>
+        </div>
+      </div>
+      <label for="fs-char">Character <span class="opt">(optional — its first portrait becomes the head when no head image is uploaded)</span></label>
+      <select id="fs-char" name="character">
+        <option value="">No character — use the uploaded head image</option>
+        {% for c in characters %}
+        <option value="{{ c.name }}" {% if character == c.name %}selected{% endif %}>{{ c.name }} ({{ c.angles }} angle{{ "s" if c.angles > 1 else "" }}){% if c.identity %} — {{ c.identity[:60] }}{% endif %}</option>
+        {% endfor %}
+      </select>
+      <label for="fs-prompt">Prompt</label>
+      <textarea id="fs-prompt" name="prompt" rows="4">{{ faceswap_prompt }}</textarea>
+      <div class="btn-row"><button type="submit">Generate</button></div>
+      <div class="i2i-result" id="i2i-fs-result" hidden></div>
+    </form>
+  </div>
+  </section>
 </main>
 <aside class="rail" aria-label="Task queue">
   <div class="rail-head"><h2>Queue</h2><span id="rail-count" class="qcount"></span></div>
@@ -437,6 +538,142 @@ enhanceBtn.addEventListener("click", () => {
   };
   src.onerror = () => { enhanceHint.textContent = "Enhance failed: network error."; close(); };
 });
+</script>
+<script>
+// i2i tools: previews, dynamic swap prompt, inline result polling.
+const SWAP_PROMPTS = {{ swap_prompts | tojson }};
+
+function escHtml(s) {
+  return (s || "").replace(/[&<>"']/g, c =>
+    ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
+}
+
+function bindPreview(inputId, imgId) {
+  const input = document.getElementById(inputId);
+  const img = document.getElementById(imgId);
+  if (!input || !img) return;
+  input.addEventListener("change", () => {
+    const f = input.files && input.files[0];
+    if (!f) { img.hidden = true; img.removeAttribute("src"); return; }
+    const reader = new FileReader();
+    reader.onload = () => { img.src = reader.result; img.hidden = false; };
+    reader.readAsDataURL(f);
+  });
+}
+bindPreview("swap-base", "swap-base-preview");
+bindPreview("swap-ref", "swap-ref-preview");
+bindPreview("fs-body", "fs-body-preview");
+bindPreview("fs-head", "fs-head-preview");
+
+// Swap: at least one of Clothes/Pose; the prompt auto-rewrites to match the
+// checkbox combination unless the user typed their own text.
+(function () {
+  const clothes = document.getElementById("swap-clothes");
+  const pose = document.getElementById("swap-pose");
+  const prompt = document.getElementById("swap-prompt");
+  const submit = document.getElementById("swap-submit");
+  const hint = document.getElementById("swap-hint");
+  if (!clothes || !pose || !prompt) return;
+  let swapAuto = SWAP_PROMPTS.both;
+  const sync = () => {
+    const next = clothes.checked && pose.checked ? SWAP_PROMPTS.both
+               : clothes.checked ? SWAP_PROMPTS.clothes
+               : pose.checked ? SWAP_PROMPTS.pose
+               : SWAP_PROMPTS.neither;
+    const cur = prompt.value;
+    if (!cur.trim() || cur === swapAuto) prompt.value = next;
+    swapAuto = next;
+    const none = !clothes.checked && !pose.checked;
+    if (submit) submit.disabled = none;
+    if (hint) hint.textContent = none ? "Pick Clothes and/or Pose to enable Generate." : "";
+  };
+  clothes.addEventListener("change", sync);
+  pose.addEventListener("change", sync);
+  sync();
+})();
+
+// Face swap: a chosen character slot supplies the head, so the head upload
+// is only required when no slot is picked.
+(function () {
+  const sel = document.getElementById("fs-char");
+  const head = document.getElementById("fs-head");
+  if (!sel || !head) return;
+  const sync = () => { head.required = !sel.value; };
+  sel.addEventListener("change", sync);
+  sync();
+})();
+
+// Inline dispatch: POST /generate asking for JSON, then poll /queue.json
+// every 3 s and render the finished image in the panel below the form.
+function initInlineResult(formId, panelId) {
+  const form = document.getElementById(formId);
+  const panel = document.getElementById(panelId);
+  if (!form || !panel) return;
+  let timer = null;
+  const stop = () => { if (timer) { clearInterval(timer); timer = null; } };
+  form.addEventListener("submit", async (ev) => {
+    ev.preventDefault();
+    stop();
+    if (formId === "i2i-swap-form") {
+      const c = document.getElementById("swap-clothes");
+      const p = document.getElementById("swap-pose");
+      if (c && p && !c.checked && !p.checked) return; // button is disabled anyway
+    }
+    panel.hidden = false;
+    panel.innerHTML = '<div class="spin-row"><span class="mini-spinner"></span><span>Dispatching…</span></div>';
+    let r;
+    try {
+      r = await fetch("/generate", {
+        method: "POST", headers: {"Accept": "application/json"}, body: new FormData(form),
+      });
+    } catch (e) {
+      panel.innerHTML = '<p class="error">Network error — is the server up?</p>';
+      return;
+    }
+    if (!r.ok) {
+      let msg = "HTTP " + r.status;
+      try {
+        const txt = await r.text();
+        const m = txt.match(/<p class="error">([\s\S]*?)<\/p>/);
+        if (m) msg = m[1].trim();
+      } catch (e) { /* keep HTTP status */ }
+      panel.innerHTML = '<p class="error">' + escHtml(msg) + '</p>';
+      return;
+    }
+    const st = await r.json();
+    const id = (st.queued || [])[0];
+    if (!id) { panel.innerHTML = '<p class="error">No task id returned.</p>'; return; }
+    panel.innerHTML = '<div class="spin-row"><span class="mini-spinner"></span>' +
+      '<span>Rendering… <code>' + escHtml(id.slice(0, 12)) + '</code></span></div>';
+    const poll = async () => {
+      let jobs = [];
+      try {
+        const q = await fetch("/queue.json");
+        if (!q.ok) return;
+        jobs = (await q.json()).jobs || [];
+      } catch (e) { return; /* next tick retries */ }
+      const job = jobs.find(j => j.id === id);
+      if (!job) return;
+      if (job.error) {
+        stop();
+        panel.innerHTML = '<p class="error">' + escHtml(job.error) + '</p>';
+      } else if (job.done) {
+        stop();
+        panel.innerHTML =
+          '<img class="zoomable" src="/image/' + id + '" alt="generated image" title="Click to zoom, Esc to close">' +
+          '<p class="hint"><a href="/image/' + id + '" download="qwen21_' + id + '.png">Download PNG</a>' +
+          ' · <a href="/result/' + id + '" target="_blank" rel="noopener">result page</a></p>';
+        attachZoom();
+      }
+    };
+    poll();
+    timer = setInterval(poll, 3000);
+  });
+}
+initInlineResult("i2i-edit-form", "i2i-edit-result");
+initInlineResult("i2i-swap-form", "i2i-swap-result");
+initInlineResult("i2i-faceswap-form", "i2i-fs-result");
+attachZoom();
 </script>
 </body>
 </html>

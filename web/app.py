@@ -80,6 +80,11 @@ MOCK_MODAL = os.environ.get("MOCK_MODAL", "") == "1"
 
 MODES = ("generate", "edit", "headswap", "turbo")
 
+# UI sections: the Create form (generate/turbo) and the i2i tools (edit/swap/face-swap).
+# mode=edit/headswap is still accepted by the backend for form posts.
+SECTIONS = ("create", "i2i")
+I2I_TOOLS = ("edit", "swap", "face-swap")
+
 # Optional composition presets: appended to the prompt. Add more here —
 # key = form value, value = fragment. Keep fragments pose/composition-only.
 PRESETS = {
@@ -192,6 +197,28 @@ MODE_DEFAULT_PROMPTS = {
     "headswap": HEADSWAP_DEFAULT_PROMPT,
     "turbo": "cinematic portrait of an astronaut in a neon Tokyo alley, rain reflections, ultra detailed",
 }
+
+# Swap-tool prompt defaults keyed by the clothes/pose checkbox combination.
+# The template seeds the textarea with "both"; the browser rewrites it live as
+# the checkboxes change (skipping text the user typed themselves).
+SWAP_DEFAULT_PROMPTS = {
+    "both": "dress the person from <image1> in the clothing from <image2>, and change their pose to the pose from <image2>, keep their face unchanged, photorealistic",
+    "clothes": "dress the person from <image1> in the clothing from <image2>, keep their face, pose and background unchanged, photorealistic",
+    "pose": "replace the pose of the person in <image1> with the pose from <image2>, keep their face and clothing unchanged, photorealistic",
+    "neither": "",
+}
+
+
+def _default_prompt(section: str, tool: str, mode: str) -> str:
+    """Textarea prefill for the active UI: Create modes vs the i2i tools."""
+    if section == "i2i":
+        if tool == "swap":
+            return SWAP_DEFAULT_PROMPTS["both"]
+        if tool == "face-swap":
+            return HEADSWAP_DEFAULT_PROMPT
+        return MODE_DEFAULT_PROMPTS["edit"]
+    return MODE_DEFAULT_PROMPTS.get(mode, "")
+
 
 MAX_REFS = 4
 MAX_FILE_MB = 10
@@ -533,12 +560,17 @@ def _poll_modal(call_id: str) -> None:
 
 
 @app.get("/", response_class=HTMLResponse)
-def index(request: Request, mode: str = "", char_error: str = ""):
-    mode = mode if mode in MODES else DEFAULT_MODE
+def index(request: Request, mode: str = "", char_error: str = "",
+          section: str = "", tool: str = ""):
+    # The Create form only offers text-to-image modes; edit/headswap moved to i2i.
+    if mode not in ("generate", "turbo"):
+        mode = DEFAULT_MODE if DEFAULT_MODE in ("generate", "turbo") else "generate"
+    section = section if section in SECTIONS else "create"
+    tool = tool if tool in I2I_TOOLS else "edit"
     return templates.TemplateResponse(
         request, "index.html",
         {"mode": mode, "modes": MODES, "mode_prompts": MODE_DEFAULT_PROMPTS,
-         "default_prompt": MODE_DEFAULT_PROMPTS[mode],
+         "default_prompt": _default_prompt(section, tool, mode),
          "characters": list_characters(), "character": "",
          "presets": PRESETS, "preset": "",
          "angles": ANGLES, "angle": "",
@@ -546,6 +578,9 @@ def index(request: Request, mode: str = "", char_error: str = ""):
          "lenses": LENSES, "lens": "",
          "lights": LIGHTS, "light": "",
          "cameras": CAMERAS, "camera": "",
+         "section": section, "tool": tool,
+         "swap_prompts": SWAP_DEFAULT_PROMPTS,
+         "headswap_default_prompt": HEADSWAP_DEFAULT_PROMPT,
          "error": char_error or None},
     )
 
@@ -741,20 +776,29 @@ async def generate(
     camera: str = Form(""),
     realface: str = Form(""),
     realbody: str = Form(""),
+    section: str = Form("create"),
+    tool: str = Form(""),
 ):
+    # Keep the active section/tool through a validation-error re-render.
+    section = section if section in SECTIONS else "create"
+    tool = tool if tool in I2I_TOOLS else "edit"
+
     def _form_ctx(error: str, status: int):
         return templates.TemplateResponse(
             request, "index.html",
             {"error": error, "mode": mode if mode in MODES else DEFAULT_MODE,
              "modes": MODES, "mode_prompts": MODE_DEFAULT_PROMPTS,
-             "default_prompt": prompt or MODE_DEFAULT_PROMPTS.get(mode, ""),
+             "default_prompt": prompt or _default_prompt(section, tool, mode),
              "characters": list_characters(), "character": character,
              "presets": PRESETS, "preset": preset,
              "angles": ANGLES, "angle": angle,
              "scenes": SCENES, "scene": scene,
              "lenses": LENSES, "lens": lens,
              "lights": LIGHTS, "light": light,
-             "cameras": CAMERAS, "camera": camera},
+             "cameras": CAMERAS, "camera": camera,
+             "section": section, "tool": tool,
+             "swap_prompts": SWAP_DEFAULT_PROMPTS,
+             "headswap_default_prompt": HEADSWAP_DEFAULT_PROMPT},
             status_code=status,
         )
 
