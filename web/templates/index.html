@@ -25,7 +25,7 @@
       <select id="preset" name="preset">
         <option value="">No pose</option>
         {% for key in presets %}
-        <option value="{{ key }}" {% if preset == key %}selected{% endif %}>{{ key }}</option>
+        <option value="{{ key }}" title="{{ presets[key] }}" {% if preset == key %}selected{% endif %}>{{ key }}</option>
         {% endfor %}
       </select>
     </div>
@@ -35,7 +35,7 @@
       <select id="style" name="style">
         <option value="">No style</option>
         {% for key in styles %}
-        <option value="{{ key }}" {% if style == key %}selected{% endif %}>{{ key }}</option>
+        <option value="{{ key }}" title="{{ styles[key] }}" {% if style == key %}selected{% endif %}>{{ key }}</option>
         {% endfor %}
       </select>
     </div>
@@ -45,13 +45,23 @@
       <select id="scene" name="scene">
         <option value="">No scene</option>
         {% for key in scenes %}
-        <option value="{{ key }}" {% if scene == key %}selected{% endif %}>{{ key }}</option>
+        <option value="{{ key }}" title="{{ scenes[key] }}" {% if scene == key %}selected{% endif %}>{{ key }}</option>
         {% endfor %}
       </select>
     </div>
 
     <div id="skin-block">
       <label class="check"><input type="checkbox" name="realskin" value="1"> Real skin <span class="opt">(texture lock, anti-plastic)</span></label>
+    </div>
+
+    <div id="lens-block">
+      <label for="lens">Lens <span class="opt">(optional focal character)</span></label>
+      <select id="lens" name="lens">
+        <option value="">No lens</option>
+        {% for key in lenses %}
+        <option value="{{ key }}" title="{{ lenses[key] }}" {% if lens == key %}selected{% endif %}>{{ key }}</option>
+        {% endfor %}
+      </select>
     </div>
 
     <div id="char-block">
@@ -130,6 +140,46 @@
       <input id="char-identity" name="identity" type="text" maxlength="300" placeholder="early 30s, sharp jaw, freckles across nose, short black bob">
       <button type="submit">Save character</button>
     </form>
+  </details>
+  <details>
+    <summary>Field guide — what each preset does</summary>
+    <div class="guide">
+      <h3>Pose</h3>
+      <ul>
+        <li><b>full-body</b> — head to feet, standing, camera steps back</li>
+        <li><b>sitting</b> — seated naturally, three-quarter view</li>
+        <li><b>walking</b> — mid-stride toward camera, clothes and hair in motion</li>
+        <li><b>laughing</b> — caught mid-laugh, unposed expression</li>
+        <li><b>over-shoulder</b> — looking back, body turned away</li>
+        <li><b>sitting-floor</b> — on the ground, elbows on knees, slouched</li>
+        <li><b>doing-thing</b> — mid-activity, hands busy, candid</li>
+      </ul>
+      <h3>Style (light)</h3>
+      <ul>
+        <li><b>snapshot-flash</b> — phone-flash at night, slightly harsh, most realistic signal</li>
+        <li><b>overcast-day</b> — flat daylight, even tones, calm</li>
+        <li><b>golden-hour</b> — warm low sun, natural glow</li>
+        <li><b>indoor-lamp</b> — warm room light, cozy evening</li>
+        <li><b>film-grain</b> — analog grain over everything, kills smoothness globally</li>
+      </ul>
+      <h3>Scene (background)</h3>
+      <ul>
+        <li><b>street / market</b> — city life behind, blurred people and shops</li>
+        <li><b>cafe</b> — coffee cup, casual interior</li>
+        <li><b>park</b> — trees and path, daylight</li>
+        <li><b>home</b> — lived-in room, sofa and window light</li>
+        <li><b>beach-day</b> — midday beach, sea and distant people</li>
+      </ul>
+      <h3>Lens</h3>
+      <ul>
+        <li><b>24mm</b> — dramatic wide, face fills frame</li>
+        <li><b>35mm</b> — environmental, context stays</li>
+        <li><b>50mm</b> — natural, eye-level, neutral</li>
+        <li><b>85mm</b> — tight portrait, blurred background</li>
+        <li><b>135mm</b> — flat telephoto, creamy distance</li>
+      </ul>
+      <p class="hint">Pose, style, scene and lens stack — pick one of each. Hover any dropdown option for its exact prompt text.</p>
+    </div>
   </details>
   <p class="hint" id="mode-hint"></p>
 </main>
@@ -211,6 +261,7 @@ function applyMode(setDefaults) {
   document.getElementById("preset-block").style.display = (m === "generate" || m === "turbo") ? "" : "none";
   document.getElementById("style-block").style.display = (m === "generate" || m === "turbo") ? "" : "none";
   document.getElementById("scene-block").style.display = (m === "generate" || m === "turbo") ? "" : "none";
+  document.getElementById("lens-block").style.display = (m === "generate" || m === "turbo") ? "" : "none";
   document.getElementById("enhance-btn").style.display = (m === "generate" || m === "turbo") ? "" : "none";
   document.getElementById("eg-btn").style.display = (m === "generate" || m === "turbo") ? "" : "none";
   promptEl.required = info.promptRequired;

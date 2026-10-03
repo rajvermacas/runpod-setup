@@ -103,6 +103,15 @@ SCENES = {
     "beach-day": "on a public beach midday, sea and people in distance",
 }
 
+# Lens presets: focal length character (fourth dropdown, stacks with all).
+LENSES = {
+    "24mm": "shot on 24mm wide-angle lens, dramatic perspective",
+    "35mm": "shot on 35mm lens, natural environmental framing",
+    "50mm": "shot on 50mm lens, natural proportions, eye-level",
+    "85mm": "shot on 85mm portrait lens, shallow depth of field, compressed background",
+    "135mm": "shot on 135mm telephoto, creamy bokeh, flat compressed perspective",
+}
+
 # Style presets: light/medium only (second dropdown, stacks with pose).
 STYLES = {
     "snapshot-flash": "direct phone-flash look at night, slightly harsh light, snapshot aesthetic",
@@ -495,6 +504,7 @@ def index(request: Request, mode: str = "", char_error: str = ""):
          "presets": PRESETS, "preset": "",
          "styles": STYLES, "style": "",
          "scenes": SCENES, "scene": "",
+         "lenses": LENSES, "lens": "",
          "error": char_error or None},
     )
 
@@ -685,6 +695,7 @@ async def generate(
     preset: str = Form(""),
     style: str = Form(""),
     scene: str = Form(""),
+    lens: str = Form(""),
     realskin: str = Form(""),
 ):
     def _form_ctx(error: str, status: int):
@@ -696,7 +707,8 @@ async def generate(
              "characters": list_characters(), "character": character,
              "presets": PRESETS, "preset": preset,
              "styles": STYLES, "style": style,
-             "scenes": SCENES, "scene": scene},
+             "scenes": SCENES, "scene": scene,
+             "lenses": LENSES, "lens": lens},
             status_code=status,
         )
 
@@ -808,6 +820,11 @@ async def generate(
         return _form_ctx("Unknown scene.", 400)
     if scene and mode in ("generate", "turbo"):
         prompt = f"{prompt.strip()}, {SCENES[scene]}"
+    lens = (lens or "").strip()
+    if lens and lens not in LENSES:
+        return _form_ctx("Unknown lens.", 400)
+    if lens and mode in ("generate", "turbo"):
+        prompt = f"{prompt.strip()}, {LENSES[lens]}"
     if (realskin or "").strip().lower() in ("1", "on", "true", "yes"):
         prompt = f"{prompt.strip()}, {REAL_SKIN}"
     gpu = (gpu or "T4").upper()
