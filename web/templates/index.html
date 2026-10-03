@@ -3,35 +3,85 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Qwen-Image 2.1 — generate</title>
+<title>Qwen-Image 2.1 + BFS Head-Swap — generate</title>
 <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
 <main class="card">
-  <h1>Qwen-Image 2.1</h1>
-  <p class="sub">Text-to-image + edit with reference photos. Backend calls Modal GPU.</p>
+  <h1>Qwen-Image 2.1 + BFS Head-Swap</h1>
+  <p class="sub" id="mode-sub"></p>
   {% if error %}<p class="error">{{ error }}</p>{% endif %}
   <form action="/generate" method="post" enctype="multipart/form-data">
+    <div class="modes" role="radiogroup" aria-label="Mode">
+      <label><input type="radio" name="mode" value="generate" {% if mode == "generate" %}checked{% endif %}> Generate</label>
+      <label><input type="radio" name="mode" value="edit" {% if mode == "edit" %}checked{% endif %}> Edit</label>
+      <label><input type="radio" name="mode" value="headswap" {% if mode == "headswap" %}checked{% endif %}> Head-swap</label>
+    </div>
+
     <label for="prompt">Prompt</label>
-    <textarea id="prompt" name="prompt" rows="4" required
-      placeholder="cinematic photorealistic portrait, soft golden light, ultra detailed"></textarea>
+    <textarea id="prompt" name="prompt" rows="4"
+      placeholder="cinematic photorealistic portrait, soft golden light, ultra detailed">{{ default_prompt }}</textarea>
 
     <label for="negative_prompt">Negative prompt <span class="opt">(optional)</span></label>
     <input id="negative_prompt" name="negative_prompt" type="text" placeholder="blurry, low quality">
 
-    <label for="ref_images">Reference images <span class="opt">(optional, up to 4 — edit mode follows the first)</span></label>
+    <label for="ref_images">Reference images <span class="opt" id="refs-hint"></span></label>
     <input id="ref_images" name="ref_images" type="file" accept="image/*" multiple>
 
     <div class="grid">
       <div><label>Width</label><input name="width" type="number" value="608" min="256" max="2048" step="32"></div>
       <div><label>Height</label><input name="height" type="number" value="608" min="256" max="2048" step="32"></div>
-      <div><label>Steps</label><input name="steps" type="number" value="20" min="1" max="100"></div>
-      <div><label>Seed <span class="opt">(0 = random)</span></label><input name="seed" type="number" value="0"></div>
+      <div><label>Steps</label><input id="steps" name="steps" type="number" value="20" min="1" max="100"></div>
+      <div><label>Seed <span class="opt">(0 = random)</span></label><input id="seed" name="seed" type="number" value="0"></div>
     </div>
 
     <button type="submit">Generate on Modal</button>
   </form>
-  <p class="hint">Inference takes ~30–60 s on L4 plus cold start. You’ll get a polling page — keep it open.</p>
+  <p class="hint" id="mode-hint"></p>
+<script>
+const HEADSWAP_PROMPT = {{ default_prompt | tojson }};
+const INFO = {
+  generate: {
+    sub: "Text-to-image on Modal GPU (Qwen-Image 2.1 4-bit).",
+    refs: "(optional — any refs act as edit references)",
+    hint: "Inference takes ~30–60 s on L4 plus cold start. You’ll get a polling page — keep it open.",
+    promptRequired: true, steps: 20, seed: 0,
+  },
+  edit: {
+    sub: "Edit with reference photos. Output follows the first reference.",
+    refs: "(optional, up to 4 — edit mode follows the first)",
+    hint: "Edit runs slightly slower (~40 s on L4): reference latents extend the sequence.",
+    promptRequired: true, steps: 20, seed: 0,
+  },
+  headswap: {
+    sub: "BFS head-swap LoRA: body/target first, reference head second.",
+    refs: "(required, exactly 2 — body/target first, reference head second)",
+    hint: "Head-swap takes ~50 s on L4 at 25 steps. No public figures without consent.",
+    promptRequired: false, steps: 25, seed: 42,
+  },
+};
+const promptEl = document.getElementById("prompt");
+function currentMode() {
+  const el = document.querySelector('input[name="mode"]:checked');
+  return el ? el.value : "generate";
+}
+function applyMode(setDefaults) {
+  const m = currentMode(), info = INFO[m];
+  document.getElementById("mode-sub").textContent = info.sub;
+  document.getElementById("refs-hint").textContent = info.refs;
+  document.getElementById("mode-hint").textContent = info.hint;
+  promptEl.required = info.promptRequired;
+  if (setDefaults) {
+    document.getElementById("steps").value = info.steps;
+    document.getElementById("seed").value = info.seed;
+    if (m === "headswap" && !promptEl.value.trim()) promptEl.value = HEADSWAP_PROMPT;
+  }
+}
+document.querySelectorAll('input[name="mode"]').forEach(el => {
+  el.addEventListener("change", () => applyMode(true));
+});
+applyMode(false);
+</script>
 </main>
 </body>
 </html>

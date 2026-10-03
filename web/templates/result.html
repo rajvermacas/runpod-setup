@@ -29,7 +29,7 @@
     <ul>
       <li>call_id: <code>{{ call_id }}</code></li>
       <li>size: {{ job.width }}×{{ job.height }}, steps {{ job.steps }}, seed {{ job.seed }}</li>
-      <li>references: {{ job.ref_count }}</li>
+      <li>mode: {{ job.mode or "?" }}, references: {{ job.ref_count }}</li>
       {% if job.negative %}<li>negative: {{ job.negative }}</li>{% endif %}
     </ul>
     {% if job.ref_previews %}

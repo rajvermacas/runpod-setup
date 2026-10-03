@@ -8,8 +8,21 @@ Flow (async, avoids HTTP timeouts on 1-3 min GPU jobs):
   GET  /result/{call_id}-> poll Modal; 202-style pending page auto-refreshes
   GET  /image/{call_id} -> final PNG bytes
 
-Backend -> Modal uses `modal.Cls.from_name("qwen21-4bit-direct", "Qwen21Direct")`
-with `.spawn()` / `FunctionCall.from_id().get(timeout=0)`.
+Backend -> Modal uses `modal.Cls.from_name(...)` with `.spawn()` /
+`FunctionCall.from_id().get(timeout=0)` against two deployed apps:
+
+  generate / edit -> `Qwen21Direct` on `qwen21-4bit-direct`
+  headswap       -> `BFSHeadSwapDirect` on `bfs-headswap-direct`
+
+(Deploy once each: `modal deploy modal_qwen21_direct.py` and
+`modal deploy modal_bfs_headswap_direct.py` — `Cls.from_name` needs a
+deployed app. Overrides: MODAL_APP_NAME / MODAL_CLS_NAME for the Qwen
+path, BFS_MODAL_APP_NAME / BFS_MODAL_CLS_NAME for the head-swap path.)
+
+Modes (radio on the form, `mode` form field):
+  generate: text-to-image, no references needed.
+  edit:     Qwen edit with reference photos (up to 4, output follows the first).
+  headswap: BFS LoRA — exactly 2 images, body/target first, reference head second.
 
 Run:
   pip install -r web/requirements.txt
@@ -45,8 +58,25 @@ TEMPLATES_DIR = BASE_DIR / "templates"
 
 MODAL_APP_NAME = os.environ.get("MODAL_APP_NAME", "qwen21-4bit-direct")
 MODAL_CLS_NAME = os.environ.get("MODAL_CLS_NAME", "Qwen21Direct")
+BFS_MODAL_APP_NAME = os.environ.get("BFS_MODAL_APP_NAME", "bfs-headswap-direct")
+BFS_MODAL_CLS_NAME = os.environ.get("BFS_MODAL_CLS_NAME", "BFSHeadSwapDirect")
 MODAL_CLIP = "qwen3vl_8b_w4a8.safetensors"
 MOCK_MODAL = os.environ.get("MOCK_MODAL", "") == "1"
+
+MODES = ("generate", "edit", "headswap")
+# Form default; BFS_HEADSWAP=1 keeps the earlier single-purpose toggle working
+# by preselecting headswap.
+DEFAULT_MODE = os.environ.get("DEFAULT_MODE", "headswap" if os.environ.get("BFS_HEADSWAP", "") == "1" else "generate")
+if DEFAULT_MODE not in MODES:
+    DEFAULT_MODE = "generate"
+
+HEADSWAP_DEFAULT_PROMPT = (
+    "head_swap: start with <image1> as the base image, keeping its lighting, "
+    "environment, and background. remove the head from <image1> completely and "
+    "replace it with the head from <image2>, strictly preserving the hair, eye "
+    "color, nose structure from <image2>. copy the direction of the eye, head "
+    "rotation, micro expressions from <image1>, high quality, sharp details, 4k"
+)
 
 MAX_REFS = 4
 MAX_FILE_MB = 10
@@ -59,8 +89,9 @@ app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="stat
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
 log.info(
-    "startup modal_app=%s cls=%s mock=%s max_refs=%d max_file_mb=%d",
-    MODAL_APP_NAME, MODAL_CLS_NAME, MOCK_MODAL, MAX_REFS, MAX_FILE_MB,
+    "startup modal_app=%s cls=%s bfs_app=%s bfs_cls=%s mock=%s default_mode=%s max_refs=%d max_file_mb=%d",
+    MODAL_APP_NAME, MODAL_CLS_NAME, BFS_MODAL_APP_NAME, BFS_MODAL_CLS_NAME,
+    MOCK_MODAL, DEFAULT_MODE, MAX_REFS, MAX_FILE_MB,
 )
 
 
@@ -85,7 +116,7 @@ def _mock_png(prompt: str, width: int = 512, height: int = 512) -> bytes:
 
 
 def _spawn_modal(prompt: str, negative: str, width: int, height: int,
-                 seed: int, steps: int, refs: list[bytes]) -> str:
+                 seed: int, steps: int, refs: list[bytes], mode: str) -> str:
     """Spawn a Modal job, return the FunctionCall id."""
     t0 = time.time()
     if MOCK_MODAL:
@@ -94,31 +125,45 @@ def _spawn_modal(prompt: str, negative: str, width: int, height: int,
             "status": "pending", "png": None, "error": None,
             "prompt": prompt, "negative": negative,
             "width": width, "height": height, "seed": seed, "steps": steps,
+            "mode": mode,
             "ref_count": len(refs), "created": time.time(), "mock": True,
             "ref_previews": _previews(refs),
         }
-        log.info("spawn mock call_id=%s prompt=%.60r %dx%d steps=%d seed=%d refs=%d (%.2fs)",
-                 call_id, prompt, width, height, steps, seed, len(refs), time.time() - t0)
+        log.info("spawn mock call_id=%s mode=%s prompt=%.60r %dx%d steps=%d seed=%d refs=%d (%.2fs)",
+                 call_id, mode, prompt, width, height, steps, seed, len(refs), time.time() - t0)
         return call_id
     import modal
 
-    cls = modal.Cls.from_name(MODAL_APP_NAME, MODAL_CLS_NAME)
-    inst = cls()
-    call = inst.generate.spawn(
-        prompt, negative, width, height, seed, steps,
-        1.0, "euler", "simple", False, MODAL_CLIP,
-        ref_images=refs or None,
-    )
+    if mode == "headswap":
+        if len(refs) < 2:
+            raise ValueError("head-swap needs 2 images: body/target first, reference head second")
+        cls = modal.Cls.from_name(BFS_MODAL_APP_NAME, BFS_MODAL_CLS_NAME)
+        inst = cls()
+        call = inst.generate.spawn(
+            refs[0], refs[1], prompt or HEADSWAP_DEFAULT_PROMPT, negative,
+            width, height, False, seed, steps,
+            1.0, "euler", "simple",
+            "bfs_head_v1.1_qwen_2.1.safetensors", 1.0, False, MODAL_CLIP,
+        )
+    else:
+        cls = modal.Cls.from_name(MODAL_APP_NAME, MODAL_CLS_NAME)
+        inst = cls()
+        call = inst.generate.spawn(
+            prompt, negative, width, height, seed, steps,
+            1.0, "euler", "simple", False, MODAL_CLIP,
+            ref_images=refs or None,
+        )
     call_id: str = call.object_id
     JOBS[call_id] = {
         "status": "pending", "png": None, "error": None,
         "prompt": prompt, "negative": negative,
         "width": width, "height": height, "seed": seed, "steps": steps,
+        "mode": mode,
         "ref_count": len(refs), "created": time.time(), "mock": False,
         "ref_previews": _previews(refs),
     }
-    log.info("spawn modal call_id=%s prompt=%.60r %dx%d steps=%d seed=%d refs=%d (%.2fs)",
-             call_id, prompt, width, height, steps, seed, len(refs), time.time() - t0)
+    log.info("spawn modal call_id=%s mode=%s prompt=%.60r %dx%d steps=%d seed=%d refs=%d (%.2fs)",
+             call_id, mode, prompt, width, height, steps, seed, len(refs), time.time() - t0)
     return call_id
 
 
@@ -184,32 +229,53 @@ def _poll_modal(call_id: str) -> None:
 
 
 @app.get("/", response_class=HTMLResponse)
-def index(request: Request):
-    return templates.TemplateResponse(request, "index.html")
+def index(request: Request, mode: str = ""):
+    mode = mode if mode in MODES else DEFAULT_MODE
+    return templates.TemplateResponse(
+        request, "index.html",
+        {"mode": mode, "modes": MODES,
+         "default_prompt": HEADSWAP_DEFAULT_PROMPT if mode == "headswap" else ""},
+    )
 
 
 @app.get("/health")
 def health():
-    return {"status": "ok", "modal_app": MODAL_APP_NAME, "mock": MOCK_MODAL}
+    return {"status": "ok", "modal_app": MODAL_APP_NAME,
+            "bfs_modal_app": BFS_MODAL_APP_NAME, "mock": MOCK_MODAL,
+            "modes": list(MODES), "default_mode": DEFAULT_MODE}
 
 
 @app.post("/generate")
 async def generate(
     request: Request,
-    prompt: str = Form(...),
+    mode: str = Form("generate"),
+    prompt: str = Form(""),
     negative_prompt: str = Form(""),
     width: int = Form(1024),
     height: int = Form(1024),
     steps: int = Form(25),
     seed: int = Form(42),
 ):
+    def _form_ctx(error: str, status: int):
+        return templates.TemplateResponse(
+            request, "index.html",
+            {"error": error, "mode": mode if mode in MODES else DEFAULT_MODE,
+             "modes": MODES,
+             "default_prompt": HEADSWAP_DEFAULT_PROMPT if mode == "headswap" else prompt},
+            status_code=status,
+        )
+
+    if mode not in MODES:
+        log.warning("POST /generate rejected: unknown mode %r", mode)
+        mode = DEFAULT_MODE
     prompt = (prompt or "").strip()
     client = request.client.host if request.client else "?"
+    if mode == "headswap" and not prompt:
+        prompt = HEADSWAP_DEFAULT_PROMPT
+        log.info("POST /generate from %s: empty prompt, using head-swap default", client)
     if not prompt:
         log.warning("POST /generate from %s rejected: empty prompt", client)
-        return templates.TemplateResponse(
-            request, "index.html", {"error": "Prompt is required."}, status_code=400
-        )
+        return _form_ctx("Prompt is required.", 400)
     width = max(256, min(width, 2048))
     height = max(256, min(height, 2048))
     steps = max(1, min(steps, 100))
@@ -237,12 +303,7 @@ async def generate(
         if f.size is not None and f.size > MAX_FILE_MB * 1024 * 1024:
             log.warning("POST /generate from %s rejected: %s %.1f MB over limit",
                         client, f.filename, f.size / 1048576)
-            return templates.TemplateResponse(
-                request,
-                "index.html",
-                {"error": f"{f.filename}: exceeds {MAX_FILE_MB} MB limit."},
-                status_code=400,
-            )
+            return _form_ctx(f"{f.filename}: exceeds {MAX_FILE_MB} MB limit.", 400)
         data = await f.read()
         if not data:
             log.warning("POST /generate from %s: skipping empty file %r", client, f.filename)
@@ -250,39 +311,30 @@ async def generate(
         if len(data) > MAX_FILE_MB * 1024 * 1024:
             log.warning("POST /generate from %s rejected: %s %.1f MB over limit",
                         client, f.filename, len(data) / 1048576)
-            return templates.TemplateResponse(
-                request,
-                "index.html",
-                {"error": f"{f.filename}: exceeds {MAX_FILE_MB} MB limit."},
-                status_code=400,
-            )
+            return _form_ctx(f"{f.filename}: exceeds {MAX_FILE_MB} MB limit.", 400)
         if not _is_image(data):
             log.warning("POST /generate from %s rejected: %r is not a decodable image",
                         client, f.filename)
-            return templates.TemplateResponse(
-                request,
-                "index.html",
-                {"error": f"{f.filename}: not a valid image file."},
-                status_code=400,
-            )
+            return _form_ctx(f"{f.filename}: not a valid image file.", 400)
         refs.append(data)
         ref_names.append(f"{f.filename} ({len(data) // 1024} KB)")
-    log.info("POST /generate from %s prompt=%.80r %dx%d steps=%d seed=%d refs=[%s]",
-             client, prompt, width, height, steps, seed, ", ".join(ref_names) or "none")
+    log.info("POST /generate from %s mode=%s prompt=%.80r %dx%d steps=%d seed=%d refs=[%s]",
+             client, mode, prompt, width, height, steps, seed, ", ".join(ref_names) or "none")
+
+    if mode == "headswap" and len(refs) < 2:
+        log.warning("POST /generate from %s rejected: head-swap needs 2 images, got %d",
+                    client, len(refs))
+        return _form_ctx(
+            "Upload exactly 2 images: body/target first, reference head second.", 400)
 
     try:
         # blocking Modal network call -> threadpool, taaki event loop block na ho
         call_id = await run_in_threadpool(
-            _spawn_modal, prompt, negative_prompt.strip(), width, height, seed, steps, refs
+            _spawn_modal, prompt, negative_prompt.strip(), width, height, seed, steps, refs, mode
         )
     except Exception as e:
         log.exception("POST /generate spawn failed for %s", client)
-        return templates.TemplateResponse(
-            request,
-            "index.html",
-            {"error": f"Modal spawn failed: {type(e).__name__}: {e}"},
-            status_code=502,
-        )
+        return _form_ctx(f"Modal spawn failed: {type(e).__name__}: {e}", 502)
     log.info("POST /generate from %s -> redirect /result/%s", client, call_id)
     return RedirectResponse(url=f"/result/{call_id}", status_code=303)
 
@@ -296,7 +348,7 @@ def result(request: Request, call_id: str):
         JOBS[call_id] = {
             "status": "pending", "png": None, "error": None, "prompt": "",
             "negative": "", "width": 1024, "height": 1024, "seed": 42,
-            "steps": 25, "ref_count": 0, "created": time.time(),
+            "steps": 25, "mode": "?", "ref_count": 0, "created": time.time(),
             "mock": MOCK_MODAL, "ref_previews": [],
         }
         job = JOBS[call_id]
