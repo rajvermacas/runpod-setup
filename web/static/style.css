@@ -191,6 +191,17 @@ details { margin-top: 1.5rem; border-top: 1px solid var(--line); padding-top: 1r
 summary { cursor: pointer; color: var(--dim); }
 details ul { color: var(--dim); }
 
+/* Queue page */
+.topnav { text-align: right; margin: 0 0 0.5rem; font-size: 0.9rem; }
+.queue { display: flex; flex-direction: column; gap: 0.9rem; }
+.qitem { display: flex; gap: 0.9rem; border-top: 1px solid var(--line); padding-top: 0.9rem; }
+.qitem img { width: 140px; border: 1px solid var(--line); border-radius: 2px; }
+.qthumb { width: 140px; min-height: 90px; display: flex; align-items: center; justify-content: center; border: 1px dashed var(--line); border-radius: 2px; color: var(--dim); font-size: 0.85rem; }
+.qmeta { min-width: 0; }
+.qstatus { color: var(--safe); font-size: 0.85rem; margin-left: 0.5rem; }
+.qmode { color: var(--dim); font-size: 0.85rem; margin-left: 0.5rem; }
+.qprompt { margin: 0.3rem 0 0; color: var(--dim); font-size: 0.88rem; overflow-wrap: anywhere; }
+
 /* Functional motion only: the waiting spinner answers "still working?" */
 .spinner {
   width: 40px;

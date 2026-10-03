@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Queue — generations</title>
+<link rel="stylesheet" href="/static/style.css">
+{% if pending %}<meta http-equiv="refresh" content="5">{% endif %}
+</head>
+<body>
+<main class="card">
+  <p><a href="/">← New generation</a></p>
+  <h1>Queue</h1>
+  <p class="sub">Jobs run one after another on the same warm Modal container. This page refreshes every 5 s while anything is pending.</p>
+  {% if not jobs %}<p class="hint">No jobs yet.</p>{% endif %}
+  <div class="queue">
+    {% for cid, job in jobs %}
+    <div class="qitem">
+      <a href="/result/{{ cid }}">
+        {% if job.status == "done" and job.png %}
+        <img src="/image/{{ cid }}" alt="result" loading="lazy">
+        {% else %}
+        <div class="qthumb pending">{{ job.status }}</div>
+        {% endif %}
+      </a>
+      <div class="qmeta">
+        <a href="/result/{{ cid }}"><code>{{ cid[:14] }}</code></a>
+        <span class="qstatus">{{ job.status }}</span>
+        <span class="qmode">{{ job.mode }}</span>
+        <p class="qprompt">{{ job.prompt[:140] }}</p>
+      </div>
+    </div>
+    {% endfor %}
+  </div>
+</main>
+</body>
+</html>

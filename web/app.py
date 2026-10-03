@@ -106,6 +106,13 @@ MAX_FILE_MB = 10
 
 # call_id -> job dict (in-memory; single-process dev server)
 JOBS: dict[str, dict] = {}
+MAX_JOBS_KEPT = 50  # bound memory: drop oldest finished jobs beyond this
+
+
+def _prune_jobs() -> None:
+    done = [(cid, j) for cid, j in JOBS.items() if j["status"] != "pending"]
+    for cid, _ in sorted(done, key=lambda kv: kv[1]["created"])[:max(0, len(done) - MAX_JOBS_KEPT)]:
+        del JOBS[cid]
 
 
 def _load_dotenv() -> None:
@@ -290,6 +297,7 @@ def _spawn_modal(prompt: str, negative: str, width: int, height: int,
             ref_images=refs or None,
         )
     call_id: str = call.object_id
+    _prune_jobs()
     JOBS[call_id] = {
         "status": "pending", "png": None, "error": None,
         "prompt": prompt, "negative": negative,
@@ -514,6 +522,7 @@ async def generate(
     height: int = Form(1024),
     steps: int = Form(25),
     seed: int = Form(0),
+    batch: int = Form(1),
 ):
     def _form_ctx(error: str, status: int):
         return templates.TemplateResponse(
@@ -617,20 +626,46 @@ async def generate(
         log.info("POST /generate from %s: enhanced (ratio=%s), chaining to %s",
                  client, ratio or "?", mode)
 
+    batch = max(1, min(batch, 8))
+
     try:
-        # blocking Modal network call -> threadpool, taaki event loop block na ho
-        call_id = await run_in_threadpool(
-            _spawn_modal, prompt, negative_prompt.strip(), width, height, seed, steps,
-            refs, mode, char_image, identity,
-        )
+        # Batch = N Modal calls spawned back-to-back. With max_containers=1
+        # Modal queues them on ONE warm container instead of cold-starting
+        # each — no scaledown change needed. Seeds vary per item.
+        call_ids: list[str] = []
+        for i in range(batch):
+            s = seed + i if seed else 0
+            # blocking Modal network call -> threadpool, taaki event loop block na ho
+            call_ids.append(await run_in_threadpool(
+                _spawn_modal, prompt, negative_prompt.strip(), width, height, s, steps,
+                refs, mode, char_image, identity,
+            ))
+        call_id = call_ids[0]
     except Exception as e:
         log.exception("POST /generate spawn failed for %s", client)
         return _form_ctx(f"Modal spawn failed: {type(e).__name__}: {e}", 502)
     if original_prompt:
-        JOBS[call_id].update({"original_prompt": original_prompt, "enhanced": True,
+        for cid in call_ids:
+            JOBS[cid].update({"original_prompt": original_prompt, "enhanced": True,
                               "ratio": ratio, "mode": f"{mode} (enhanced)"})
+    if len(call_ids) > 1:
+        log.info("POST /generate from %s -> batch of %d, redirect /queue", client, len(call_ids))
+        return RedirectResponse(url=f"/queue?batch={','.join(call_ids)}", status_code=303)
     log.info("POST /generate from %s -> redirect /result/%s", client, call_id)
     return RedirectResponse(url=f"/result/{call_id}", status_code=303)
+
+
+@app.get("/queue", response_class=HTMLResponse)
+def queue(request: Request, batch: str = ""):
+    wanted = [c for c in batch.split(",") if c in JOBS]
+    jobs = [(cid, JOBS[cid]) for cid in wanted] or sorted(
+        JOBS.items(), key=lambda kv: kv[1]["created"], reverse=True)[:20]
+    for cid, _ in jobs:
+        _poll_modal(cid)
+    pending = any(j["status"] == "pending" for _, j in jobs)
+    return templates.TemplateResponse(
+        request, "queue.html", {"jobs": jobs, "pending": pending}
+    )
 
 
 @app.get("/result/{call_id}", response_class=HTMLResponse)
