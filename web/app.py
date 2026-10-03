@@ -396,13 +396,14 @@ def _poll_modal(call_id: str) -> None:
 
 
 @app.get("/", response_class=HTMLResponse)
-def index(request: Request, mode: str = ""):
+def index(request: Request, mode: str = "", char_error: str = ""):
     mode = mode if mode in MODES else DEFAULT_MODE
     return templates.TemplateResponse(
         request, "index.html",
         {"mode": mode, "modes": MODES, "mode_prompts": MODE_DEFAULT_PROMPTS,
          "default_prompt": MODE_DEFAULT_PROMPTS[mode],
-         "characters": list_characters(), "character": ""},
+         "characters": list_characters(), "character": "",
+         "error": char_error or None},
     )
 
 
@@ -427,18 +428,27 @@ async def save_character(
     name = (name or "").strip().lower().replace(" ", "-")
     name = "".join(c for c in name if c.isalnum() or c in "-_")
     identity = (identity or "").strip()
+
+    def _fail(msg: str):
+        from urllib.parse import quote_plus
+        log.warning("POST /characters from %s rejected: %s (%r)", client, msg, name)
+        return RedirectResponse(url=f"/?mode=generate&char_error={quote_plus(msg)}",
+                                status_code=303)
+
     if not _valid_character_name(name):
-        log.warning("POST /characters from %s rejected: bad name %r", client, name)
-        return RedirectResponse(url="/", status_code=303)
+        return _fail("slot name needs 1-32 letters/numbers/dashes")
     form = await request.form()
     upload = next((v for k, v in form.multi_items()
                    if k == "portrait" and isinstance(v, StarletteUploadFile) and v.filename), None)
     if upload is None:
-        return RedirectResponse(url="/", status_code=303)
+        return _fail("no portrait uploaded")
     data = await upload.read()
-    if not data or len(data) > MAX_FILE_MB * 1024 * 1024 or not _is_image(data):
-        log.warning("POST /characters from %s rejected: bad portrait for %r", client, name)
-        return RedirectResponse(url="/", status_code=303)
+    if not data:
+        return _fail("portrait file is empty")
+    if len(data) > MAX_FILE_MB * 1024 * 1024:
+        return _fail(f"portrait exceeds {MAX_FILE_MB} MB")
+    if not _is_image(data):
+        return _fail("portrait is not a valid image file")
     from PIL import Image
 
     img = Image.open(io.BytesIO(data))
