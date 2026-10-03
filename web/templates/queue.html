@@ -26,7 +26,7 @@
       <div class="qmeta">
         <a href="/result/{{ cid }}"><code>{{ cid[:14] }}</code></a>
         <span class="qstatus">{{ job.status }}</span>
-        <span class="qmode">{{ job.mode }}</span>
+        <span class="qmode">{{ job.mode }} · {{ (now - job.created)|int }}s</span>
         <p class="qprompt">{{ job.prompt[:140] }}</p>
       </div>
     </div>

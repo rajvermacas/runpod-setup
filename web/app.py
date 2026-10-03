@@ -740,6 +740,9 @@ async def generate(
 @app.get("/queue.json")
 def queue_json():
     """Lightweight feed for the live rail: newest first, capped."""
+    import time as _t
+
+    now = _t.time()
     items = sorted(JOBS.items(), key=lambda kv: kv[1]["created"], reverse=True)[:20]
     for cid, _ in items:
         _poll_modal(cid)
@@ -748,6 +751,7 @@ def queue_json():
          "status": j["status"],
          "mode": j.get("mode", "?"),
          "prompt": (j.get("prompt") or "")[:140],
+         "elapsed": max(0, int(now - j["created"])),
          "done": j["status"] == "done" and bool(j.get("png")),
          "error": j.get("error") or ""}
         for cid, j in items
@@ -762,8 +766,9 @@ def queue(request: Request, batch: str = ""):
     for cid, _ in jobs:
         _poll_modal(cid)
     pending = any(j["status"] == "pending" for _, j in jobs)
+    import time as _t
     return templates.TemplateResponse(
-        request, "queue.html", {"jobs": jobs, "pending": pending}
+        request, "queue.html", {"jobs": jobs, "pending": pending, "now": _t.time()}
     )
 
 
