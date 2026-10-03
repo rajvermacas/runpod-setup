@@ -17,7 +17,12 @@
     <p class="hint">Prompt: {{ job.prompt }}</p>
   {% elif job.status == "done" %}
     <h1>Result</h1>
+    {% if job.enhanced %}
+    <p class="sub">Your idea: {{ job.original_prompt }}</p>
+    <p class="sub">Enhanced prompt actually used{% if job.ratio %} (suggested ratio {{ job.ratio }}){% endif %}: {{ job.prompt }}</p>
+    {% else %}
     <p class="sub">{{ job.prompt }}</p>
+    {% endif %}
     <img class="out" src="/image/{{ call_id }}" alt="generated image">
     <p><a class="btn" href="/image/{{ call_id }}" download="qwen21_{{ call_id }}.png">Download PNG</a></p>
   {% else %}

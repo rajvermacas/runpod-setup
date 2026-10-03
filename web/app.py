@@ -278,6 +278,33 @@ def _spawn_enhance(text: str) -> str:
     return call_id
 
 
+def _enhance_blocking(text: str, timeout: int = 420) -> tuple[str, str]:
+    """Rewrite via PE and wait. Returns (rewritten_prompt, wh_ratio).
+
+    Runs in a threadpool (blocks). Raises TimeoutError on timeout, ValueError
+    on empty/unparseable result.
+    """
+    eid = _spawn_enhance(text)
+    if MOCK_MODAL:
+        import time as _t
+
+        deadline = _t.time() + min(timeout, 60)
+        while _t.time() < deadline:
+            _poll_modal(eid)
+            if JOBS[eid]["status"] == "done":
+                break
+            _t.sleep(1)
+    else:
+        import modal
+
+        modal.FunctionCall.from_id(eid).get(timeout=timeout)
+        _poll_modal(eid)
+    job = JOBS[eid]
+    if job["status"] != "done" or not (job.get("result") or {}).get("rewritten_prompt", "").strip():
+        raise ValueError(f"enhance failed: {job.get('error') or 'empty result'}")
+    return job["result"]["rewritten_prompt"].strip(), str(job["result"].get("wh_ratio", ""))
+
+
 def _is_image(data: bytes) -> bool:
     """True if bytes decode as an image (early 400 > late GPU failure)."""
     from PIL import Image
@@ -446,6 +473,7 @@ def enhance_status(call_id: str):
 async def generate(
     request: Request,
     mode: str = Form("generate"),
+    flow: str = Form("generate"),
     character: str = Form(""),
     prompt: str = Form(""),
     negative_prompt: str = Form(""),
@@ -540,6 +568,24 @@ async def generate(
         return _form_ctx(
             "Head-swap needs a body upload plus a head: either upload 2 images, or upload 1 body and pick a character slot as the head.", 400)
 
+    original_prompt = ""
+    ratio = ""
+    if flow == "enhance-generate":
+        if mode not in ("generate", "turbo"):
+            return _form_ctx("Enhance & Generate is only offered for Generate/Turbo modes.", 400)
+        log.info("POST /generate from %s: enhance-first flow, waiting on PE...", client)
+        original_prompt = prompt
+        try:
+            prompt, ratio = await run_in_threadpool(_enhance_blocking, prompt)
+        except TimeoutError:
+            log.warning("POST /generate from %s: enhance timed out", client)
+            return _form_ctx("Enhance timed out on the GPU (overloaded?). Try Enhance alone, or plain Generate.", 504)
+        except Exception as e:
+            log.exception("POST /generate from %s: enhance failed", client)
+            return _form_ctx(f"Enhance failed: {type(e).__name__}: {e}", 502)
+        log.info("POST /generate from %s: enhanced (ratio=%s), chaining to %s",
+                 client, ratio or "?", mode)
+
     try:
         # blocking Modal network call -> threadpool, taaki event loop block na ho
         call_id = await run_in_threadpool(
@@ -549,6 +595,9 @@ async def generate(
     except Exception as e:
         log.exception("POST /generate spawn failed for %s", client)
         return _form_ctx(f"Modal spawn failed: {type(e).__name__}: {e}", 502)
+    if original_prompt:
+        JOBS[call_id].update({"original_prompt": original_prompt, "enhanced": True,
+                              "ratio": ratio, "mode": f"{mode} (enhanced)"})
     log.info("POST /generate from %s -> redirect /result/%s", client, call_id)
     return RedirectResponse(url=f"/result/{call_id}", status_code=303)
 

@@ -55,7 +55,11 @@
       <div><label>Seed <span class="opt">(0 = random)</span></label><input id="seed" name="seed" type="number" value="0"></div>
     </div>
 
-    <button type="submit">Generate on Modal</button>
+    <div class="btn-row">
+      <button type="submit" name="flow" value="generate">Generate on Modal</button>
+      <button type="submit" name="flow" value="enhance-generate" id="eg-btn"
+        title="Rewrite the prompt on GPU first, then generate with it">Enhance &amp; Generate</button>
+    </div>
   </form>
   <details>
     <summary>Save a character slot</summary>
@@ -111,6 +115,7 @@ function applyMode(setDefaults) {
   document.getElementById("neg-block").style.display = info.showNeg ? "" : "none";
   document.getElementById("char-block").style.display = info.showChar ? "" : "none";
   document.getElementById("enhance-btn").style.display = (m === "generate" || m === "turbo") ? "" : "none";
+  document.getElementById("eg-btn").style.display = (m === "generate" || m === "turbo") ? "" : "none";
   promptEl.required = info.promptRequired;
   if (setDefaults) {
     // Swap in the new mode's default prompt — unless the user typed their

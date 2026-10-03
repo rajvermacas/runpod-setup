@@ -85,6 +85,12 @@ textarea { min-height: 7rem; resize: vertical; line-height: 1.55; }
 .prompt-row textarea { flex: 1; }
 .prompt-row button { white-space: nowrap; }
 
+/* Dual actions: plain generate vs enhance-first */
+.btn-row { display: flex; gap: 0.7rem; flex-wrap: wrap; align-items: center; }
+.btn-row button { margin-top: 0; }
+#eg-btn { background: transparent; color: var(--safe); border: 1px solid var(--safe-deep); }
+#eg-btn:hover { background: #2a1410; }
+
 ::placeholder { color: #6f6355; }
 
 input[type="file"] { margin: 0.25rem 0 0; color: var(--dim); }
