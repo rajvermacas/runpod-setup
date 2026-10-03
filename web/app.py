@@ -131,21 +131,19 @@ STYLES = {
     "film-grain": "35mm film grain, subtle imperfections, analog feel",
 }
 
-# Anti-plastic lock v3.1: v3 overexpressed redness (whole-face sunburn) and
-# diluted framing. Redness minimal + confined, fragment trimmed so
-# composition instructions keep weight. Whole-body priority retained.
-REAL_SKIN = ("natural real skin over the whole visible body, face, neck, arms and legs, "
-             "visible pores on nose and cheeks, faint skin oiliness on T-zone, very subtle "
-             "redness confined around nostrils, slight facial asymmetry, soft subsurface glow, "
-             "subtle film grain, matte natural finish, strictly prohibited: waxy skin, flawless skin, "
-             "porcelain skin, airbrushed skin, plastic sheen, ai glow, beauty filter, cgi look")
-
-# Separate feature: body integrity (anatomy + clothing). Split from skin
-# because skin tokens were outvoting the single clothing mention.
-REAL_BODY = ("anatomically correct body with natural proportions, realistic hands, "
-             "fully dressed in the described clothing, coherent limbs, strictly prohibited: "
-             "shirtless, nude, undressed, exposed skin beyond face neck arms and hands, "
-             "deformed anatomy, extra limbs, missing fingers")
+# Two opt-in locks (checkboxes, both off by default). Real skin is a
+# SUPERSET of real face: face zones + body-wide realism. Affirmative-only:
+# Qwen's official guide mandates affirmative requirements over prohibitions,
+# and negation words inside a positive prompt risk the "pink elephant" effect
+# (CVPR'24: models attend to the named concept, not the negation) — especially
+# on Turbo/Qwen at CFG 1.0 where no negative channel exists. Neither mentions
+# clothing; garments come from the subject prompt.
+REAL_FACE = ("visible pores on nose and cheeks, fine vellus hair on cheeks catching sidelight, "
+             "slight facial asymmetry, soft subsurface "
+             "glow at ears and lips, natural lip moisture, catchlight in eyes")
+REAL_SKIN = (REAL_FACE + ", natural real skin over the whole visible body, faint skin oiliness, "
+             "natural uneven tone, matte natural finish with non-uniform specular "
+             "response, subtle film grain")
 # Form default; BFS_HEADSWAP=1 keeps the earlier single-purpose toggle working
 # by preselecting headswap.
 DEFAULT_MODE = os.environ.get("DEFAULT_MODE", "headswap" if os.environ.get("BFS_HEADSWAP", "") == "1" else "generate")
@@ -713,7 +711,7 @@ async def generate(
     lens: str = Form(""),
     light: str = Form(""),
     realskin: str = Form(""),
-    realbody: str = Form(""),
+    realface: str = Form(""),
 ):
     def _form_ctx(error: str, status: int):
         return templates.TemplateResponse(
@@ -850,8 +848,8 @@ async def generate(
         prompt = f"{prompt.strip()}, {LIGHTS[light]}"
     if (realskin or "").strip().lower() in ("1", "on", "true", "yes"):
         prompt = f"{prompt.strip()}, {REAL_SKIN}"
-    if (realbody or "").strip().lower() in ("1", "on", "true", "yes"):
-        prompt = f"{prompt.strip()}, {REAL_BODY}"
+    elif (realface or "").strip().lower() in ("1", "on", "true", "yes"):
+        prompt = f"{prompt.strip()}, {REAL_FACE}"
     gpu = (gpu or "T4").upper()
     if gpu not in ("T4", "L4"):
         return _form_ctx("GPU must be T4 or L4.", 400)
