@@ -21,11 +21,11 @@
     </select>
 
     <div id="char-block">
-      <label for="character">Character <span class="opt">(optional — saved face auto-attached + identity injected; in Head-swap it becomes the head)</span></label>
+      <label for="character">Character <span class="opt">(optional — saved angles auto-attach + identity injected; in Head-swap angle-1 becomes the head)</span></label>
       <select id="character" name="character">
         <option value="">No character — fresh generation</option>
         {% for c in characters %}
-        <option value="{{ c.name }}" {% if character == c.name %}selected{% endif %}>{{ c.name }}{% if c.identity %} — {{ c.identity[:60] }}{% endif %}</option>
+        <option value="{{ c.name }}" {% if character == c.name %}selected{% endif %}>{{ c.name }} ({{ c.angles }} angle{{ "s" if c.angles > 1 else "" }}){% if c.identity %} — {{ c.identity[:60] }}{% endif %}</option>
         {% endfor %}
       </select>
     </div>
@@ -78,7 +78,7 @@
     {% if characters %}
     <ul class="slots">
       {% for c in characters %}
-      <li><code>{{ c.name }}</code>
+      <li><code>{{ c.name }}</code> <span class="opt">{{ c.angles }} angle{{ "s" if c.angles > 1 else "" }}</span>
         <form action="/characters/delete" method="post" class="inline" onsubmit="return confirm('Delete slot {{ c.name }}?');">
           <input type="hidden" name="name" value="{{ c.name }}">
           <button type="submit" class="danger">Delete</button>
@@ -90,8 +90,8 @@
     <form action="/characters" method="post" enctype="multipart/form-data">
       <label for="char-name">Slot name <span class="opt">(letters, numbers, dash)</span></label>
       <input id="char-name" name="name" type="text" maxlength="32" required placeholder="anya">
-      <label for="char-portrait">Portrait</label>
-      <input id="char-portrait" name="portrait" type="file" accept="image/*" required>
+      <label for="char-portrait">Portraits <span class="opt">(front + side + 3/4 — up to 4 angles, same person; re-save same name to add more)</span></label>
+      <input id="char-portrait" name="portrait" type="file" accept="image/*" multiple required>
       <label for="char-identity">Identity anchor <span class="opt">(injected into every prompt using this slot)</span></label>
       <input id="char-identity" name="identity" type="text" maxlength="300" placeholder="early 30s, sharp jaw, freckles across nose, short black bob">
       <button type="submit">Save character</button>

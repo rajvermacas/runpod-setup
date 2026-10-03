@@ -157,11 +157,12 @@ def _enhance_system() -> str:
 ENHANCE_SYSTEM = _enhance_system() + """
 
 ADDITIONAL CONSTRAINT (overrides the size guidance above — follow everything
-else as written): keep rewritten_prompt SURGICAL, 80-120 words, one paragraph.
-Include only what decides the image: subject + key action/pose, the 2-3 most
-important environment details, light direction and color, camera/lens, one style
-word. Drop the full frame-walk inventory, secondary objects, and closing summary.
-No quality boosters. wh_ratio rule unchanged.
+else as written): the rewritten_prompt must be CRISP and SURGICAL — 40 to 60
+words, 3 to 4 sentences, nothing more. One sentence for subject + key action,
+one for the 1-2 decisive environment details, one for light direction/color plus
+camera/lens, and the style word folded in. Cut the frame-walk inventory,
+secondary objects, closing summary, and every filler adjective. Each word must
+change the image or it gets deleted. No quality boosters. wh_ratio rule unchanged.
 """
 
 # Saved character slots: web/characters/<name>.png|jpg + <name>.txt (identity anchor).
@@ -173,32 +174,51 @@ def _valid_character_name(name: str) -> bool:
     return bool(name) and len(name) <= 32 and all(c.isalnum() or c in "-_" for c in name)
 
 
+def _migrate_flat_slots() -> None:
+    """One-time: flat <name>.ext + <name>.txt -> <name>/angle-1.ext + identity.txt."""
+    for img in list(CHARACTERS_DIR.glob("*")):
+        if not img.is_file() or img.suffix.lower() not in (".png", ".jpg", ".jpeg", ".webp"):
+            continue
+        d = CHARACTERS_DIR / img.stem
+        d.mkdir(exist_ok=True)
+        img.rename(d / f"angle-1{img.suffix.lower()}")
+        txt = CHARACTERS_DIR / f"{img.stem}.txt"
+        if txt.is_file():
+            txt.rename(d / "identity.txt")
+
+
 def list_characters() -> list[dict]:
-    """Saved slots: [{"name":..., "identity":..., "has_image":...}], sorted."""
+    """Saved slots: [{"name", "identity", "angles", "images":[bytes...]}], sorted."""
+    _migrate_flat_slots()
     out: list[dict] = []
     if not CHARACTERS_DIR.is_dir():
         return out
-    for img in sorted(CHARACTERS_DIR.glob("*")):
-        if img.suffix.lower() not in (".png", ".jpg", ".jpeg", ".webp") or not img.is_file():
+    for d in sorted(CHARACTERS_DIR.iterdir()):
+        if not d.is_dir():
             continue
-        txt = img.with_suffix(".txt")
+        imgs = sorted([p for p in d.iterdir()
+                       if p.is_file() and p.suffix.lower() in (".png", ".jpg", ".jpeg", ".webp")])
+        if not imgs:
+            continue
+        ident = d / "identity.txt"
         out.append({
-            "name": img.stem,
-            "identity": txt.read_text().strip() if txt.is_file() else "",
-            "has_image": True,
+            "name": d.name,
+            "identity": ident.read_text().strip() if ident.is_file() else "",
+            "angles": len(imgs),
+            "images": [p.read_bytes() for p in imgs],
         })
     return out
 
 
-def load_character(name: str) -> tuple[bytes, str]:
-    """Return (image bytes, identity text) for a saved slot; raises ValueError."""
+def load_character(name: str) -> tuple[list[bytes], str]:
+    """Return ([image bytes, best angle first], identity text); raises ValueError."""
     for c in list_characters():
         if c["name"] == name:
-            for ext in (".png", ".jpg", ".jpeg", ".webp"):
-                p = CHARACTERS_DIR / f"{name}{ext}"
-                if p.is_file():
-                    return p.read_bytes(), c["identity"]
+            return c["images"], c["identity"]
     raise ValueError(f"unknown character: {name!r}")
+
+
+MAX_SLOT_ANGLES = 4  # identity refs beyond this cost VRAM/time per generation
 
 app = FastAPI(title="Qwen-Image 2.1 web UI")
 app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="static")
@@ -234,14 +254,14 @@ def _mock_png(prompt: str, width: int = 512, height: int = 512) -> bytes:
 
 def _spawn_modal(prompt: str, negative: str, width: int, height: int,
                  seed: int, steps: int, refs: list[bytes], mode: str,
-                 char_image: bytes | None = None, identity: str = "",
+                 char_images: list[bytes] | None = None, identity: str = "",
                  gpu: str = "T4", scaledown: int = 2) -> str:
     """Spawn a Modal job, return the FunctionCall id.
 
-    char_image/identity come from a saved character slot: the portrait is
-    appended as an identity reference and the anchor text is injected.
-    In headswap mode the slot portrait serves as the head (<image2>), so a
-    single body upload suffices.
+    char_images/identity come from a saved character slot: portraits append
+    as identity references (best angle first) and the anchor text injects.
+    In headswap mode the first slot portrait serves as the head (<image2>),
+    so a single body upload suffices.
     """
     t0 = time.time()
     refs = list(refs)
@@ -251,12 +271,15 @@ def _spawn_modal(prompt: str, negative: str, width: int, height: int,
     scaledown = max(2, min(int(scaledown or 2), 600))
     if identity:
         prompt = f"{prompt.strip()}\nSame identity: {identity.strip()}"
-    if mode == "headswap" and char_image is not None:
+    if mode == "headswap" and char_images:
         if not refs:
             raise ValueError("head-swap with a character needs 1 body upload (the head comes from the slot)")
-        refs = [refs[0], char_image]  # extra uploads ignored, logged below
-    elif char_image is not None and len(refs) < MAX_REFS:
-        refs.append(char_image)
+        refs = [refs[0], char_images[0]]  # first slot angle = head; extra uploads ignored
+    elif char_images:
+        for b in char_images:
+            if len(refs) >= MAX_REFS:
+                break
+            refs.append(b)
     if MOCK_MODAL:
         call_id = f"mock-{uuid.uuid4().hex[:12]}"
         JOBS[call_id] = {
@@ -460,26 +483,38 @@ async def save_character(
     if not _valid_character_name(name):
         return _fail("slot name needs 1-32 letters/numbers/dashes")
     form = await request.form()
-    upload = next((v for k, v in form.multi_items()
-                   if k == "portrait" and isinstance(v, StarletteUploadFile) and v.filename), None)
-    if upload is None:
+    uploads = [v for k, v in form.multi_items()
+               if k == "portrait" and isinstance(v, StarletteUploadFile) and v.filename]
+    if not uploads:
         return _fail("no portrait uploaded")
-    data = await upload.read()
-    if not data:
-        return _fail("portrait file is empty")
-    if len(data) > MAX_FILE_MB * 1024 * 1024:
-        return _fail(f"portrait exceeds {MAX_FILE_MB} MB")
-    if not _is_image(data):
-        return _fail("portrait is not a valid image file")
+    datas: list[bytes] = []
+    for upload in uploads:
+        data = await upload.read()
+        if not data:
+            continue
+        if len(data) > MAX_FILE_MB * 1024 * 1024:
+            return _fail(f"{upload.filename}: exceeds {MAX_FILE_MB} MB")
+        if not _is_image(data):
+            return _fail(f"{upload.filename}: not a valid image file")
+        datas.append(data)
+    if not datas:
+        return _fail("no usable portrait uploaded")
     from PIL import Image
 
-    img = Image.open(io.BytesIO(data))
-    ext = ".png" if (img.mode in ("RGBA", "LA") or "transparency" in img.info) else ".jpg"
-    for old in CHARACTERS_DIR.glob(f"{name}.*"):
-        old.unlink()
-    (CHARACTERS_DIR / f"{name}{ext}").write_bytes(data)
-    (CHARACTERS_DIR / f"{name}.txt").write_text(identity + "\n" if identity else "")
-    log.info("POST /characters from %s saved slot %r (%d KB)", client, name, len(data) // 1024)
+    slot = CHARACTERS_DIR / name
+    slot.mkdir(exist_ok=True)
+    existing = sorted(slot.glob("angle-*.png")) + sorted(slot.glob("angle-*.jpg"))
+    if len(existing) + len(datas) > MAX_SLOT_ANGLES:
+        return _fail(f"slot holds max {MAX_SLOT_ANGLES} angles (has {len(existing)})")
+    n = len(existing)
+    for data in datas:
+        n += 1
+        img = Image.open(io.BytesIO(data))
+        ext = ".png" if (img.mode in ("RGBA", "LA") or "transparency" in img.info) else ".jpg"
+        (slot / f"angle-{n}{ext}").write_bytes(data)
+    if identity:
+        (slot / "identity.txt").write_text(identity + "\n")
+    log.info("POST /characters from %s saved slot %r (%d angles)", client, name, n)
     return RedirectResponse(url=f"/?mode=generate", status_code=303)
 
 
@@ -574,6 +609,12 @@ async def delete_character(request: Request, name: str = Form("")):
     for p in CHARACTERS_DIR.glob(f"{name}.*"):
         if p.is_file():
             p.unlink()
+    import shutil
+
+    slot = CHARACTERS_DIR / name
+    if slot.is_dir():
+        removed = [p.name for p in sorted(slot.iterdir())]
+        shutil.rmtree(slot)
     log.info("POST /characters/delete from %s removed slot %r (%s)",
              client, name, ", ".join(removed) or "was already gone")
     return RedirectResponse(url="/", status_code=303)
@@ -616,11 +657,11 @@ async def generate(
     if not prompt:
         log.warning("POST /generate from %s rejected: empty prompt", client)
         return _form_ctx("Prompt is required.", 400)
-    char_image: bytes | None = None
+    char_images: list[bytes] = []
     identity = ""
     if character:
         try:
-            char_image, identity = load_character(character)
+            char_images, identity = load_character(character)
         except ValueError as e:
             log.warning("POST /generate from %s rejected: %s", client, e)
             return _form_ctx(str(e), 400)
@@ -670,14 +711,14 @@ async def generate(
              client, mode, character or "none", prompt, width, height, steps, seed,
              ", ".join(ref_names) or "none")
 
-    if mode == "turbo" and (refs or char_image is not None):
+    if mode == "turbo" and (refs or char_images):
         log.warning("POST /generate from %s rejected: turbo takes no reference images", client)
         return _form_ctx(
             "Turbo is text-to-image only — remove reference images and the character, or switch mode.", 400)
 
-    if mode == "headswap" and (len(refs) + (1 if char_image is not None else 0)) < 2:
+    if mode == "headswap" and (len(refs) + (1 if char_images else 0)) < 2:
         log.warning("POST /generate from %s rejected: head-swap needs 2 images, got %d uploads + %s slot",
-                    client, len(refs), "1" if char_image is not None else "0")
+                    client, len(refs), "1" if char_images else "0")
         return _form_ctx(
             "Head-swap needs a body upload plus a head: either upload 2 images, or upload 1 body and pick a character slot as the head.", 400)
 
@@ -716,7 +757,7 @@ async def generate(
             # blocking Modal network call -> threadpool, taaki event loop block na ho
             call_ids.append(await run_in_threadpool(
                 _spawn_modal, prompt, negative_prompt.strip(), width, height, s, steps,
-                refs, mode, char_image, identity, gpu, scaledown,
+                refs, mode, char_images, identity, gpu, scaledown,
             ))
         call_id = call_ids[0]
     except Exception as e:
