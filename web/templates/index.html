@@ -31,12 +31,8 @@
     </div>
 
     <label for="prompt">Prompt</label>
-    <div class="prompt-row">
-      <textarea id="prompt" name="prompt" rows="4"
-        placeholder="cinematic photorealistic portrait, soft golden light, ultra detailed">{{ default_prompt }}</textarea>
-      <button type="button" id="enhance-btn" title="Rewrite with PE-T2I">Enhance</button>
-    </div>
-    <p class="hint" id="enhance-hint"></p>
+    <textarea id="prompt" name="prompt" rows="4"
+      placeholder="cinematic photorealistic portrait, soft golden light, ultra detailed">{{ default_prompt }}</textarea>
 
     <div id="refs-block">
       <label for="ref_images">Reference images <span class="opt" id="refs-hint"></span></label>
@@ -55,11 +51,7 @@
       <div><label>Seed <span class="opt">(0 = random)</span></label><input id="seed" name="seed" type="number" value="0"></div>
     </div>
 
-    <div class="btn-row">
-      <button type="submit" name="flow" value="generate">Generate on Modal</button>
-      <button type="submit" name="flow" value="enhance-generate" id="eg-btn"
-        title="Rewrite the prompt on GPU first, then generate with it">Enhance &amp; Generate</button>
-    </div>
+    <button type="submit">Generate on Modal</button>
   </form>
   <details>
     <summary>Save a character slot</summary>
@@ -114,8 +106,6 @@ function applyMode(setDefaults) {
   document.getElementById("refs-block").style.display = info.showRefs ? "" : "none";
   document.getElementById("neg-block").style.display = info.showNeg ? "" : "none";
   document.getElementById("char-block").style.display = info.showChar ? "" : "none";
-  document.getElementById("enhance-btn").style.display = (m === "generate" || m === "turbo") ? "" : "none";
-  document.getElementById("eg-btn").style.display = (m === "generate" || m === "turbo") ? "" : "none";
   promptEl.required = info.promptRequired;
   if (setDefaults) {
     // Swap in the new mode's default prompt — unless the user typed their
@@ -131,41 +121,6 @@ function applyMode(setDefaults) {
 }
 modeEl.addEventListener("change", () => applyMode(true));
 applyMode(false);
-
-// PE-T2I prompt enhancement (Generate/Turbo): rewrite -> fill box, show ratio.
-const enhanceBtn = document.getElementById("enhance-btn");
-const enhanceHint = document.getElementById("enhance-hint");
-enhanceBtn.addEventListener("click", async () => {
-  const text = promptEl.value.trim();
-  if (!text) { enhanceHint.textContent = "Write a short idea first, then Enhance."; return; }
-  enhanceBtn.disabled = true;
-  enhanceHint.textContent = "Enhancing on Modal GPU…";
-  try {
-    const r = await fetch("/enhance", {
-      method: "POST", headers: {"Content-Type": "application/json"},
-      body: JSON.stringify({text}),
-    });
-    if (!r.ok) { enhanceHint.textContent = "Enhance failed (HTTP " + r.status + ")."; return; }
-    const {call_id} = await r.json();
-    for (let i = 0; i < 90; i++) {
-      await new Promise(res => setTimeout(res, 2000));
-      const s = await fetch("/enhance/" + call_id);
-      if (!s.ok) { enhanceHint.textContent = "Enhance failed (HTTP " + s.status + ")."; return; }
-      const st = await s.json();
-      if (st.status === "done") {
-        promptEl.value = st.rewritten_prompt || text;
-        enhanceHint.textContent = st.wh_ratio
-          ? "Enhanced. Suggested aspect ratio: " + st.wh_ratio + " — set Width/Height to match."
-          : "Enhanced.";
-        return;
-      }
-      if (st.status === "error") { enhanceHint.textContent = "Enhance failed."; return; }
-    }
-    enhanceHint.textContent = "Enhance timed out — try again.";
-  } finally {
-    enhanceBtn.disabled = false;
-  }
-});
 </script>
 </main>
 </body>

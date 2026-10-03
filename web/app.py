@@ -26,6 +26,11 @@ Modes (dropdown on the form, `mode` form field):
   headswap: BFS LoRA — exactly 2 images, body/target first, reference head second.
   turbo:    Z-Image-Turbo, 8-step text-to-image (no refs, negative ignored).
 
+Character slots: portraits saved under web/characters/ appear in the
+Character dropdown; the slot portrait auto-attaches as an identity
+reference and its anchor text injects into the prompt. In headswap mode
+the slot portrait becomes the head, so one body upload suffices.
+
 Run:
   pip install -r web/requirements.txt
   uvicorn web.app:app --reload --port 8000
@@ -64,8 +69,6 @@ BFS_MODAL_APP_NAME = os.environ.get("BFS_MODAL_APP_NAME", "bfs-headswap-direct")
 BFS_MODAL_CLS_NAME = os.environ.get("BFS_MODAL_CLS_NAME", "BFSHeadSwapDirect")
 TURBO_MODAL_APP_NAME = os.environ.get("TURBO_MODAL_APP_NAME", "zimage-turbo-direct")
 TURBO_MODAL_CLS_NAME = os.environ.get("TURBO_MODAL_CLS_NAME", "ZImageTurboDirect")
-PE_MODAL_APP_NAME = os.environ.get("PE_MODAL_APP_NAME", "qwen21-pe-rewrite")
-PE_MODAL_CLS_NAME = os.environ.get("PE_MODAL_CLS_NAME", "PERewrite")
 # Official Z-Image-Turbo int8 template defaults (see modal_zimage_turbo_direct.py).
 TURBO_DEFAULTS = dict(steps=8, cfg=1.0, sampler="res_multistep", scheduler="simple",
                       shift=3.0, unet="z_image_turbo_int8_convrot.safetensors",
@@ -100,7 +103,6 @@ MAX_REFS = 4
 MAX_FILE_MB = 10
 
 # call_id -> job dict (in-memory; single-process dev server)
-# image jobs carry png bytes; enhance jobs carry result dict.
 JOBS: dict[str, dict] = {}
 
 # Saved character slots: web/characters/<name>.png|jpg + <name>.txt (identity anchor).
@@ -194,7 +196,7 @@ def _spawn_modal(prompt: str, negative: str, width: int, height: int,
     if MOCK_MODAL:
         call_id = f"mock-{uuid.uuid4().hex[:12]}"
         JOBS[call_id] = {
-            "status": "pending", "png": None, "error": None, "kind": "image",
+            "status": "pending", "png": None, "error": None,
             "prompt": prompt, "negative": negative,
             "width": width, "height": height, "seed": seed, "steps": steps,
             "mode": mode,
@@ -237,7 +239,7 @@ def _spawn_modal(prompt: str, negative: str, width: int, height: int,
         )
     call_id: str = call.object_id
     JOBS[call_id] = {
-        "status": "pending", "png": None, "error": None, "kind": "image",
+        "status": "pending", "png": None, "error": None,
         "prompt": prompt, "negative": negative,
         "width": width, "height": height, "seed": seed, "steps": steps,
         "mode": mode,
@@ -247,62 +249,6 @@ def _spawn_modal(prompt: str, negative: str, width: int, height: int,
     log.info("spawn modal call_id=%s mode=%s prompt=%.60r %dx%d steps=%d seed=%d refs=%d (%.2fs)",
              call_id, mode, prompt, width, height, steps, seed, len(refs), time.time() - t0)
     return call_id
-
-
-def _spawn_enhance(text: str) -> str:
-    """Spawn a PE-T2I rewrite job, return the FunctionCall id."""
-    t0 = time.time()
-    text = (text or "").strip()
-    if not text:
-        raise ValueError("nothing to enhance: prompt is empty")
-    if MOCK_MODAL:
-        call_id = f"mock-{uuid.uuid4().hex[:12]}"
-        JOBS[call_id] = {
-            "status": "pending", "result": None, "error": None, "kind": "enhance",
-            "prompt": text, "created": time.time(), "mock": True,
-        }
-        log.info("spawn mock enhance call_id=%s text=%.60r (%.2fs)",
-                 call_id, text, time.time() - t0)
-        return call_id
-    import modal
-
-    cls = modal.Cls.from_name(PE_MODAL_APP_NAME, PE_MODAL_CLS_NAME)
-    call = cls().rewrite.spawn(text)
-    call_id: str = call.object_id
-    JOBS[call_id] = {
-        "status": "pending", "result": None, "error": None, "kind": "enhance",
-        "prompt": text, "created": time.time(), "mock": False,
-    }
-    log.info("spawn modal enhance call_id=%s text=%.60r (%.2fs)",
-             call_id, text, time.time() - t0)
-    return call_id
-
-
-def _enhance_blocking(text: str, timeout: int = 420) -> tuple[str, str]:
-    """Rewrite via PE and wait. Returns (rewritten_prompt, wh_ratio).
-
-    Runs in a threadpool (blocks). Raises TimeoutError on timeout, ValueError
-    on empty/unparseable result.
-    """
-    eid = _spawn_enhance(text)
-    if MOCK_MODAL:
-        import time as _t
-
-        deadline = _t.time() + min(timeout, 60)
-        while _t.time() < deadline:
-            _poll_modal(eid)
-            if JOBS[eid]["status"] == "done":
-                break
-            _t.sleep(1)
-    else:
-        import modal
-
-        modal.FunctionCall.from_id(eid).get(timeout=timeout)
-        _poll_modal(eid)
-    job = JOBS[eid]
-    if job["status"] != "done" or not (job.get("result") or {}).get("rewritten_prompt", "").strip():
-        raise ValueError(f"enhance failed: {job.get('error') or 'empty result'}")
-    return job["result"]["rewritten_prompt"].strip(), str(job["result"].get("wh_ratio", ""))
 
 
 def _is_image(data: bytes) -> bool:
@@ -328,41 +274,31 @@ def _previews(refs: list[bytes], limit: int = 4) -> list[str]:
 
 
 def _poll_modal(call_id: str) -> None:
-    """Poll once; on success store the result and mark done, on Timeout leave pending."""
+    """Poll once; on success store PNG and mark done, on Timeout leave pending."""
     job = JOBS.get(call_id)
     if job is None or job["status"] != "pending":
         return
-    if job.get("chain"):
-        return  # chained placeholder: background _eg_chain fills it, not Modal
     elapsed = time.time() - job["created"]
-    kind = job.get("kind", "image")
     if job.get("mock"):
-        # simulate GPU delay so polling UI can be exercised (shorter for text)
-        if time.time() - job["created"] < (3 if kind == "enhance" else 5):
+        # simulate ~5 s GPU delay so polling UI can be exercised
+        if time.time() - job["created"] < 5:
             log.debug("poll %s still pending (mock, %.0fs)", call_id, elapsed)
             return
         try:
-            if kind == "enhance":
-                job["result"] = {
-                    "rewritten_prompt": f"[mock enhanced] {job['prompt']} — cinematic light, "
-                                        "shallow depth of field, ultra detailed",
-                    "wh_ratio": "16:9",
-                }
-            else:
-                job["png"] = _mock_png(job["prompt"], job["width"], job["height"])
+            job["png"] = _mock_png(job["prompt"], job["width"], job["height"])
             job["status"] = "done"
         except Exception as e:
             job["status"] = "error"
             job["error"] = str(e)
             log.exception("poll %s mock render failed", call_id)
             return
-        log.info("poll %s done (mock, %.0fs)", call_id, elapsed)
+        log.info("poll %s done (mock, %.0fs, %d bytes)", call_id, elapsed, len(job["png"]))
         return
     try:
         import modal
 
         fc = modal.FunctionCall.from_id(call_id)
-        out = fc.get(timeout=0)  # raises TimeoutError while running
+        png = fc.get(timeout=0)  # raises TimeoutError while running
     except TimeoutError:
         log.debug("poll %s still pending (%.0fs)", call_id, elapsed)
         return
@@ -371,61 +307,9 @@ def _poll_modal(call_id: str) -> None:
         job["error"] = f"{type(e).__name__}: {e}"
         log.exception("poll %s failed after %.0fs", call_id, elapsed)
         return
-    if kind == "enhance":
-        job["result"] = dict(out)
-        job["status"] = "done"
-        log.info("poll %s done enhance (%.0fs, ratio=%s)", call_id, elapsed,
-                 job["result"].get("wh_ratio", "?"))
-        return
-    job["png"] = bytes(out)
+    job["png"] = bytes(png)
     job["status"] = "done"
     log.info("poll %s done (%.0fs, %d bytes)", call_id, elapsed, len(job["png"]))
-
-
-def _eg_chain(chain_id: str, prompt: str, negative: str, width: int, height: int,
-              seed: int, steps: int, refs: list[bytes], mode: str,
-              char_image: bytes | None, identity: str) -> None:
-    """Background Enhance & Generate chain: fills the placeholder job."""
-    import time as _t
-
-    job = JOBS.get(chain_id)
-    if job is None:
-        return
-    try:
-        rewritten, ratio = _enhance_blocking(prompt, timeout=900)
-    except Exception as e:
-        job["status"] = "error"
-        job["error"] = f"Enhance failed ({type(e).__name__}): {e}. Try plain Generate."
-        log.exception("eg chain %s enhance failed", chain_id)
-        return
-    job.update({"prompt": rewritten, "enhanced": True, "ratio": ratio,
-                "stage": "generating"})
-    log.info("eg chain %s enhanced (ratio=%s), spawning %s",
-             chain_id, ratio or "?", mode)
-    try:
-        img_id = _spawn_modal(rewritten, negative, width, height, seed, steps,
-                              refs, mode, char_image, identity)
-    except Exception as e:
-        job["status"] = "error"
-        job["error"] = f"Modal spawn failed: {type(e).__name__}: {e}"
-        log.exception("eg chain %s spawn failed", chain_id)
-        return
-    deadline = _t.time() + 900
-    while _t.time() < deadline:
-        _poll_modal(img_id)
-        img_job = JOBS.get(img_id, {})
-        if img_job.get("status") == "done":
-            job.update({"png": img_job["png"], "status": "done",
-                        "ref_count": img_job.get("ref_count", job["ref_count"])})
-            log.info("eg chain %s done (%d bytes)", chain_id, len(job["png"]))
-            return
-        if img_job.get("status") == "error":
-            job["status"] = "error"
-            job["error"] = img_job.get("error", "image job failed")
-            return
-        _t.sleep(4)
-    job["status"] = "error"
-    job["error"] = "Image step timed out. Try plain Generate."
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -443,8 +327,7 @@ def index(request: Request, mode: str = ""):
 def health():
     return {"status": "ok", "modal_app": MODAL_APP_NAME,
             "bfs_modal_app": BFS_MODAL_APP_NAME,
-            "turbo_modal_app": TURBO_MODAL_APP_NAME,
-            "pe_modal_app": PE_MODAL_APP_NAME, "mock": MOCK_MODAL,
+            "turbo_modal_app": TURBO_MODAL_APP_NAME, "mock": MOCK_MODAL,
             "modes": list(MODES), "default_mode": DEFAULT_MODE,
             "characters": len(list_characters())}
 
@@ -483,45 +366,10 @@ async def save_character(
     return RedirectResponse(url=f"/?mode=generate", status_code=303)
 
 
-@app.post("/enhance")
-async def enhance(request: Request):
-    """PE-T2I rewrite: {text} -> {call_id}; poll GET /enhance/{call_id}."""
-    try:
-        body = await request.json()
-        text = (body.get("text") or "")
-    except Exception:
-        return Response('{"error": "invalid JSON"}', status_code=400, media_type="application/json")
-    try:
-        call_id = await run_in_threadpool(_spawn_enhance, text)
-    except ValueError as e:
-        return Response(f'{{"error": "{e}"}}', status_code=400, media_type="application/json")
-    except Exception as e:
-        log.exception("POST /enhance spawn failed")
-        return Response(f'{{"error": "spawn failed: {type(e).__name__}: {e}"}}',
-                        status_code=502, media_type="application/json")
-    return {"call_id": call_id}
-
-
-@app.get("/enhance/{call_id}")
-def enhance_status(call_id: str):
-    job = JOBS.get(call_id)
-    if job is None or job.get("kind") != "enhance":
-        return Response('{"error": "unknown enhance job"}', status_code=404,
-                        media_type="application/json")
-    _poll_modal(call_id)
-    if job["status"] == "done":
-        return {"status": "done", **(job["result"] or {})}
-    if job["status"] == "error":
-        return Response(f'{{"status": "error", "error": "{job["error"]}"}}',
-                        status_code=502, media_type="application/json")
-    return {"status": "pending"}
-
-
 @app.post("/generate")
 async def generate(
     request: Request,
     mode: str = Form("generate"),
-    flow: str = Form("generate"),
     character: str = Form(""),
     prompt: str = Form(""),
     negative_prompt: str = Form(""),
@@ -615,31 +463,6 @@ async def generate(
                     client, len(refs), "1" if char_image is not None else "0")
         return _form_ctx(
             "Head-swap needs a body upload plus a head: either upload 2 images, or upload 1 body and pick a character slot as the head.", 400)
-
-    if flow == "enhance-generate":
-        if mode not in ("generate", "turbo"):
-            return _form_ctx("Enhance & Generate is only offered for Generate/Turbo modes.", 400)
-        # Async chain: redirect immediately, background thread runs
-        # enhance -> generate and fills this same job. The result page polls
-        # through both stages (no 7-minute blocked POST).
-        chain_id = f"eg-{uuid.uuid4().hex[:12]}"
-        JOBS[chain_id] = {
-            "status": "pending", "png": None, "error": None, "kind": "image",
-            "chain": True, "stage": "enhancing", "prompt": prompt, "original_prompt": prompt,
-            "enhanced": False, "ratio": "", "negative": negative_prompt.strip(),
-            "width": width, "height": height, "seed": seed, "steps": steps,
-            "mode": f"{mode} (enhance+generate)",
-            "ref_count": len(refs), "created": time.time(),
-            "mock": MOCK_MODAL, "ref_previews": _previews(refs),
-        }
-        import threading
-
-        args = (chain_id, prompt, negative_prompt.strip(), width, height, seed,
-                steps, refs, mode, char_image, identity)
-        threading.Thread(target=_eg_chain, args=args, daemon=True).start()
-        log.info("POST /generate from %s -> chained %s, redirect /result/%s",
-                 client, mode, chain_id)
-        return RedirectResponse(url=f"/result/{chain_id}", status_code=303)
 
     try:
         # blocking Modal network call -> threadpool, taaki event loop block na ho
