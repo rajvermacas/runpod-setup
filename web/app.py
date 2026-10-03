@@ -199,8 +199,8 @@ MODE_DEFAULT_PROMPTS = {
 }
 
 # Swap-tool prompt defaults keyed by the clothes/pose checkbox combination.
-# The template seeds the textarea with "both"; the browser rewrites it live as
-# the checkboxes change (skipping text the user typed themselves).
+# The template seeds the textarea with "clothes" (the default selection); the
+# browser rewrites it live as the checkboxes change (skipping user-typed text).
 SWAP_DEFAULT_PROMPTS = {
     "both": "Change the outfit of <image1> to the outfit in <image2>, and change the pose of the person in <image1> to the pose from <image2>. Keep the face of <image1> unchanged, photorealistic",
     "clothes": "Change the outfit of <image1> to the outfit in <image2>. Keep the face and pose of <image1> unchanged, photorealistic",
@@ -213,7 +213,7 @@ def _default_prompt(section: str, tool: str, mode: str) -> str:
     """Textarea prefill for the active UI: Create modes vs the i2i tools."""
     if section == "i2i":
         if tool == "swap":
-            return SWAP_DEFAULT_PROMPTS["both"]
+            return SWAP_DEFAULT_PROMPTS["clothes"]
         if tool == "face-swap":
             return HEADSWAP_DEFAULT_PROMPT
         return MODE_DEFAULT_PROMPTS["edit"]

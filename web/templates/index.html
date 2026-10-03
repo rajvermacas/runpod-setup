@@ -249,7 +249,7 @@
   </nav>
 
   {% set edit_prompt = default_prompt if (section == "i2i" and tool == "edit") else mode_prompts["edit"] %}
-  {% set swap_prompt = default_prompt if (section == "i2i" and tool == "swap") else swap_prompts["both"] %}
+  {% set swap_prompt = default_prompt if (section == "i2i" and tool == "swap") else swap_prompts["clothes"] %}
   {% set faceswap_prompt = default_prompt if (section == "i2i" and tool == "face-swap") else headswap_default_prompt %}
 
   <div class="tool" id="tool-edit"{% if tool != "edit" %} hidden{% endif %}>
@@ -289,7 +289,7 @@
       </div>
       <div class="check-row">
         <label class="check"><input type="checkbox" id="swap-clothes" name="swap_clothes" value="1" checked> Clothes</label>
-        <label class="check"><input type="checkbox" id="swap-pose" name="swap_pose" value="1" checked> Pose</label>
+        <label class="check"><input type="checkbox" id="swap-pose" name="swap_pose" value="1"> Pose</label>
       </div>
       <label for="swap-prompt">Prompt</label>
       <textarea id="swap-prompt" name="prompt" rows="4">{{ swap_prompt }}</textarea>
@@ -574,7 +574,7 @@ bindPreview("fs-head", "fs-head-preview");
   const submit = document.getElementById("swap-submit");
   const hint = document.getElementById("swap-hint");
   if (!clothes || !pose || !prompt) return;
-  let swapAuto = SWAP_PROMPTS.both;
+  let swapAuto = SWAP_PROMPTS.clothes;
   const sync = () => {
     const next = clothes.checked && pose.checked ? SWAP_PROMPTS.both
                : clothes.checked ? SWAP_PROMPTS.clothes
@@ -585,7 +585,11 @@ bindPreview("fs-head", "fs-head-preview");
     swapAuto = next;
     const none = !clothes.checked && !pose.checked;
     if (submit) submit.disabled = none;
-    if (hint) hint.textContent = none ? "Pick Clothes and/or Pose to enable Generate." : "";
+    if (hint) {
+      if (none) hint.textContent = "Pick Clothes and/or Pose to enable Generate.";
+      else if (clothes.checked && pose.checked) hint.textContent = "Combined swap is unreliable on this model — one image may only get one change. Prefer one at a time (Clothes tested solid, Pose tested solid).";
+      else hint.textContent = "";
+    }
   };
   clothes.addEventListener("change", sync);
   pose.addEventListener("change", sync);
