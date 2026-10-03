@@ -82,7 +82,7 @@ def _snapshot_dir() -> str:
 )
 @modal.concurrent(max_inputs=1)
 class PERewrite:
-    @modal.enter(snap=True)
+    @modal.enter()
     def load(self):
         import torch
         from transformers import AutoProcessor, Qwen3_5ForConditionalGeneration
