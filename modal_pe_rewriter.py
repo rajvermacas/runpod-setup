@@ -49,8 +49,8 @@ vol = modal.Volume.from_name(VOL_NAME, create_if_missing=True)
 
 image = (
     modal.Image.debian_slim(python_version="3.12")
-    .pip_install("torch --index-url https://download.pytorch.org/whl/cu130",
-                 "transformers>=5.4.0", "accelerate", "pillow",
+    .pip_install("torch", index_url="https://download.pytorch.org/whl/cu130")
+    .pip_install("transformers>=5.4.0", "accelerate", "pillow",
                  "huggingface_hub[hf_transfer]")
     .env({"HF_HUB_ENABLE_HF_TRANSFER": "1", "HF_XET_HIGH_PERFORMANCE": "1"})
     .run_function(_download_all, volumes={"/cache": vol}, secrets=_hf_secrets())
