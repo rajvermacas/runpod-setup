@@ -164,6 +164,13 @@ img.out { width: 100%; border: 1px solid var(--line); border-radius: 2px; margin
 .refs { display: flex; gap: 0.6rem; margin-top: 0.75rem; flex-wrap: wrap; }
 .refs img { height: 76px; border: 1px solid var(--line); border-radius: 2px; }
 
+/* Saved-slot list with inline delete */
+.slots { list-style: none; padding: 0; margin: 0.75rem 0; }
+.slots li { display: flex; align-items: center; gap: 0.75rem; padding: 0.4rem 0; border-top: 1px solid var(--line); }
+form.inline { display: inline; }
+button.danger { background: transparent; color: var(--safe); border: 1px solid var(--safe-deep); padding: 0.35rem 0.8rem; font-size: 0.85rem; }
+button.danger:hover { background: #2a1410; }
+
 details { margin-top: 1.5rem; border-top: 1px solid var(--line); padding-top: 1rem; }
 summary { cursor: pointer; color: var(--dim); }
 details ul { color: var(--dim); }

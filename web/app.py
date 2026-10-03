@@ -479,6 +479,22 @@ async def enhance(request: Request):
                         status_code=502, media_type="application/json")
 
 
+@app.post("/characters/delete")
+async def delete_character(request: Request, name: str = Form("")):
+    """Delete a saved character slot (portrait + anchor)."""
+    client = request.client.host if request.client else "?"
+    name = (name or "").strip().lower()
+    if not _valid_character_name(name):
+        return RedirectResponse(url="/", status_code=303)
+    removed = [p.name for p in CHARACTERS_DIR.glob(f"{name}.*") if p.is_file()]
+    for p in CHARACTERS_DIR.glob(f"{name}.*"):
+        if p.is_file():
+            p.unlink()
+    log.info("POST /characters/delete from %s removed slot %r (%s)",
+             client, name, ", ".join(removed) or "was already gone")
+    return RedirectResponse(url="/", status_code=303)
+
+
 @app.post("/generate")
 async def generate(
     request: Request,

@@ -64,6 +64,18 @@
   <details>
     <summary>Save a character slot</summary>
     <p class="hint">Upload a front-facing portrait once — it stays on the server and appears in the Character dropdown above. Fictional faces only.</p>
+    {% if characters %}
+    <ul class="slots">
+      {% for c in characters %}
+      <li><code>{{ c.name }}</code>
+        <form action="/characters/delete" method="post" class="inline" onsubmit="return confirm('Delete slot {{ c.name }}?');">
+          <input type="hidden" name="name" value="{{ c.name }}">
+          <button type="submit" class="danger">Delete</button>
+        </form>
+      </li>
+      {% endfor %}
+    </ul>
+    {% endif %}
     <form action="/characters" method="post" enctype="multipart/form-data">
       <label for="char-name">Slot name <span class="opt">(letters, numbers, dash)</span></label>
       <input id="char-name" name="name" type="text" maxlength="32" required placeholder="anya">
