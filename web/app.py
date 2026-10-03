@@ -408,7 +408,8 @@ async def save_character(
 ):
     """Save a portrait + identity anchor as a reusable character slot."""
     client = request.client.host if request.client else "?"
-    name = (name or "").strip().lower()
+    name = (name or "").strip().lower().replace(" ", "-")
+    name = "".join(c for c in name if c.isalnum() or c in "-_")
     identity = (identity or "").strip()
     if not _valid_character_name(name):
         log.warning("POST /characters from %s rejected: bad name %r", client, name)
