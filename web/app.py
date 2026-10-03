@@ -92,6 +92,17 @@ PRESETS = {
     "doing-thing": "mid-activity, hands busy holding an everyday object, candid",
 }
 
+# Everyday scenes: daily-lifestyle backgrounds (third dropdown, stacks with
+# pose + style). Nothing fancy — the anti-studio list.
+SCENES = {
+    "street": "on a normal city street, shops and parked cars behind, daytime",
+    "cafe": "sitting in a casual cafe, coffee cup on table, blurred interior behind",
+    "park": "in a public park, trees and walking path behind, daylight",
+    "home": "at home in a lived-in living room, sofa and window light behind",
+    "market": "in a busy local market, stalls and people blurred behind",
+    "beach-day": "on a public beach midday, sea and people in distance",
+}
+
 # Style presets: light/medium only (second dropdown, stacks with pose).
 STYLES = {
     "snapshot-flash": "direct phone-flash look at night, slightly harsh light, snapshot aesthetic",
@@ -101,8 +112,17 @@ STYLES = {
     "film-grain": "35mm film grain, subtle imperfections, analog feel",
 }
 
-# Anti-plastic lock: keeps skin human (counters AI smoothness + LoRA softening).
-REAL_SKIN = "visible skin texture, natural imperfections, no smoothing"
+# Anti-plastic lock v4: whole-body skin realism is the top priority.
+# Zone-specific hooks (generic "natural skin" fails — attention needs named
+# zones to bind). Waxy/flawless/AI-glow prohibited at every level.
+REAL_SKIN = ("natural real skin over the whole visible body, face, neck, arms and legs, "
+             "visible pore structure on nose, forehead and cheeks, fine vellus hair on cheeks "
+             "catching sidelight, subtle redness around nostrils with warmth at cheeks, uneven skin "
+             "tone with natural pigmentation variation, slight facial asymmetry, soft subsurface glow "
+             "at ears and lips, natural lip moisture, faint skin oiliness on T-zone, fine lines "
+             "preserved, subtle film grain, matte natural skin finish with non-uniform specular "
+             "response, strictly prohibited: waxy skin, flawless skin, porcelain skin, airbrushed skin, "
+             "poreless skin, plastic sheen, ai glow, beauty filter, over-smoothing, cgi look")
 # Form default; BFS_HEADSWAP=1 keeps the earlier single-purpose toggle working
 # by preselecting headswap.
 DEFAULT_MODE = os.environ.get("DEFAULT_MODE", "headswap" if os.environ.get("BFS_HEADSWAP", "") == "1" else "generate")
@@ -474,6 +494,7 @@ def index(request: Request, mode: str = "", char_error: str = ""):
          "characters": list_characters(), "character": "",
          "presets": PRESETS, "preset": "",
          "styles": STYLES, "style": "",
+         "scenes": SCENES, "scene": "",
          "error": char_error or None},
     )
 
@@ -663,6 +684,7 @@ async def generate(
     scaledown: int = Form(2),
     preset: str = Form(""),
     style: str = Form(""),
+    scene: str = Form(""),
     realskin: str = Form(""),
 ):
     def _form_ctx(error: str, status: int):
@@ -673,7 +695,8 @@ async def generate(
              "default_prompt": prompt or MODE_DEFAULT_PROMPTS.get(mode, ""),
              "characters": list_characters(), "character": character,
              "presets": PRESETS, "preset": preset,
-             "styles": STYLES, "style": style},
+             "styles": STYLES, "style": style,
+             "scenes": SCENES, "scene": scene},
             status_code=status,
         )
 
@@ -780,6 +803,11 @@ async def generate(
         return _form_ctx("Unknown style.", 400)
     if style and mode in ("generate", "turbo"):
         prompt = f"{prompt.strip()}, {STYLES[style]}"
+    scene = (scene or "").strip()
+    if scene and scene not in SCENES:
+        return _form_ctx("Unknown scene.", 400)
+    if scene and mode in ("generate", "turbo"):
+        prompt = f"{prompt.strip()}, {SCENES[scene]}"
     if (realskin or "").strip().lower() in ("1", "on", "true", "yes"):
         prompt = f"{prompt.strip()}, {REAL_SKIN}"
     gpu = (gpu or "T4").upper()

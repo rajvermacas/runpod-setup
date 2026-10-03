@@ -40,6 +40,16 @@
       </select>
     </div>
 
+    <div id="scene-block">
+      <label for="scene">Scene <span class="opt">(optional everyday background)</span></label>
+      <select id="scene" name="scene">
+        <option value="">No scene</option>
+        {% for key in scenes %}
+        <option value="{{ key }}" {% if scene == key %}selected{% endif %}>{{ key }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
     <div id="skin-block">
       <label class="check"><input type="checkbox" name="realskin" value="1"> Real skin <span class="opt">(texture lock, anti-plastic)</span></label>
     </div>
@@ -200,6 +210,7 @@ function applyMode(setDefaults) {
   document.getElementById("char-block").style.display = info.showChar ? "" : "none";
   document.getElementById("preset-block").style.display = (m === "generate" || m === "turbo") ? "" : "none";
   document.getElementById("style-block").style.display = (m === "generate" || m === "turbo") ? "" : "none";
+  document.getElementById("scene-block").style.display = (m === "generate" || m === "turbo") ? "" : "none";
   document.getElementById("enhance-btn").style.display = (m === "generate" || m === "turbo") ? "" : "none";
   document.getElementById("eg-btn").style.display = (m === "generate" || m === "turbo") ? "" : "none";
   promptEl.required = info.promptRequired;
