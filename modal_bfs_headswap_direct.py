@@ -48,7 +48,7 @@ VOL_NAME = "qwen21-comfy-cache"  # shared with modal_qwen21_direct.py (base weig
 COMFY_DIR = "/root/comfy/ComfyUI"
 # Idle seconds before a container scales down. Default 2; override per run
 # with `modal run modal_bfs_headswap_direct.py --scaledown-window 300 ...`.
-DEFAULT_SCALEDOWN_WINDOW = 2
+DEFAULT_SCALEDOWN_WINDOW = 120
 
 HF_REPO_OFFICIAL = "Comfy-Org/Qwen-Image-2.1"
 HF_REPO_BFS = "Alissonerdx/BFS-Best-Face-Swap"

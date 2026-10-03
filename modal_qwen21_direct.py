@@ -46,7 +46,7 @@ VOL_NAME = "qwen21-comfy-cache"
 COMFY_DIR = "/root/comfy/ComfyUI"
 # Idle seconds before a container scales down. Default 2; override per run
 # with `modal run modal_qwen21_direct.py --scaledown-window 300 ...`.
-DEFAULT_SCALEDOWN_WINDOW = 2
+DEFAULT_SCALEDOWN_WINDOW = 120
 
 HF_REPO_OFFICIAL = "Comfy-Org/Qwen-Image-2.1"
 HF_REPO_NVFP4_DIT = "pottokao/Qwen-Image-2.1-DiT-NVFP4-ComfyUI"

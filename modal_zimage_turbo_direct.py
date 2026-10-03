@@ -51,7 +51,7 @@ VOL_NAME = "zimage-turbo-comfy-cache"
 COMFY_DIR = "/root/comfy/ComfyUI"
 # Idle seconds before a container scales down. Default 200; override per run
 # with `modal run modal_zimage_turbo_direct.py --scaledown-window 300 ...`.
-DEFAULT_SCALEDOWN_WINDOW = 2
+DEFAULT_SCALEDOWN_WINDOW = 120
 
 # Comfy-Org/z_image_turbo is the ComfyUI repack of Tongyi-MAI/Z-Image-Turbo.
 HF_REPO_COMFY = "Comfy-Org/z_image_turbo"
