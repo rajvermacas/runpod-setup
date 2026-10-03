@@ -20,72 +20,78 @@
       <option value="turbo" {% if mode == "turbo" %}selected{% endif %}>Turbo — Z-Image-Turbo, 8 steps</option>
     </select>
 
-    <div id="preset-block">
-      <label for="preset">Pose <span class="opt">(optional)</span></label>
-      <select id="preset" name="preset">
-        <option value="">No pose</option>
-        {% for key in presets %}
-        <option value="{{ key }}" title="{{ presets[key] }}" {% if preset == key %}selected{% endif %}>{{ key }}</option>
-        {% endfor %}
-      </select>
-    </div>
-
-    <div id="style-block">
-      <label for="style">Style <span class="opt">(optional light/medium)</span></label>
-      <select id="style" name="style">
-        <option value="">No style</option>
-        {% for key in styles %}
-        <option value="{{ key }}" title="{{ styles[key] }}" {% if style == key %}selected{% endif %}>{{ key }}</option>
-        {% endfor %}
-      </select>
-    </div>
-
-    <div id="scene-block">
-      <label for="scene">Scene <span class="opt">(optional everyday background)</span></label>
-      <select id="scene" name="scene">
-        <option value="">No scene</option>
-        {% for key in scenes %}
-        <option value="{{ key }}" title="{{ scenes[key] }}" {% if scene == key %}selected{% endif %}>{{ key }}</option>
-        {% endfor %}
-      </select>
+    <div class="matrix" id="matrix">
+      <div class="mrow">
+        <span class="mlabel">Pose</span>
+        <div class="mpills" data-target="preset">
+          {% for key, fragment in presets.items() %}
+          <button type="button" class="pill{% if preset == key %} on{% endif %}" data-value="{{ key }}" title="{{ fragment }}">{{ key }}</button>
+          {% endfor %}
+        </div>
+        <input type="hidden" id="preset" name="preset" value="{{ preset }}">
+      </div>
+      <div class="mrow">
+        <span class="mlabel">Angle</span>
+        <div class="mpills" data-target="angle">
+          {% for key, fragment in angles.items() %}
+          <button type="button" class="pill{% if angle == key %} on{% endif %}" data-value="{{ key }}" title="{{ fragment }}">{{ key }}</button>
+          {% endfor %}
+        </div>
+        <input type="hidden" id="angle" name="angle" value="{{ angle }}">
+      </div>
+      <div class="mrow">
+        <span class="mlabel">Style</span>
+        <div class="mpills" data-target="style">
+          {% for key, fragment in styles.items() %}
+          <button type="button" class="pill{% if style == key %} on{% endif %}" data-value="{{ key }}" title="{{ fragment }}">{{ key }}</button>
+          {% endfor %}
+        </div>
+        <input type="hidden" id="style" name="style" value="{{ style }}">
+      </div>
+      <div class="mrow">
+        <span class="mlabel">Light</span>
+        <div class="mpills" data-target="light">
+          {% for key, fragment in lights.items() %}
+          <button type="button" class="pill{% if light == key %} on{% endif %}" data-value="{{ key }}" title="{{ fragment }}">{{ key }}</button>
+          {% endfor %}
+        </div>
+        <input type="hidden" id="light" name="light" value="{{ light }}">
+      </div>
+      <div class="mrow">
+        <span class="mlabel">Camera</span>
+        <div class="mpills" data-target="camera">
+          {% for key, fragment in cameras.items() %}
+          <button type="button" class="pill{% if camera == key %} on{% endif %}" data-value="{{ key }}" title="{{ fragment }}">{{ key }}</button>
+          {% endfor %}
+        </div>
+        <input type="hidden" id="camera" name="camera" value="{{ camera }}">
+      </div>
+      <div class="mrow">
+        <span class="mlabel">Scene</span>
+        <div class="mpills" data-target="scene">
+          {% for key, fragment in scenes.items() %}
+          <button type="button" class="pill{% if scene == key %} on{% endif %}" data-value="{{ key }}" title="{{ fragment }}">{{ key }}</button>
+          {% endfor %}
+        </div>
+        <input type="hidden" id="scene" name="scene" value="{{ scene }}">
+      </div>
+      <div class="mrow">
+        <span class="mlabel">Lens</span>
+        <div class="mpills" data-target="lens">
+          {% for key, fragment in lenses.items() %}
+          <button type="button" class="pill{% if lens == key %} on{% endif %}" data-value="{{ key }}" title="{{ fragment }}">{{ key }}</button>
+          {% endfor %}
+        </div>
+        <input type="hidden" id="lens" name="lens" value="{{ lens }}">
+      </div>
     </div>
 
     <div id="skin-block">
-      <label class="check"><input type="checkbox" name="realskin" value="1"> Real skin <span class="opt">(texture lock, anti-plastic)</span></label>
+      <label class="check"><input type="checkbox" name="realface" value="1"> Real face <span class="opt">(face detailing: pores, asymmetry, natural tone)</span></label>
     </div>
 
     <div id="body-block">
-      <label class="check"><input type="checkbox" name="realbody" value="1"> Real body <span class="opt">(body-wide realism, anti-glow)</span></label>
-    </div>
-
-    <div id="lens-block">
-      <label for="lens">Lens <span class="opt">(optional focal character)</span></label>
-      <select id="lens" name="lens">
-        <option value="">No lens</option>
-        {% for key in lenses %}
-        <option value="{{ key }}" title="{{ lenses[key] }}" {% if lens == key %}selected{% endif %}>{{ key }}</option>
-        {% endfor %}
-      </select>
-    </div>
-
-    <div id="light-block">
-      <label for="light">Light <span class="opt">(optional lighting)</span></label>
-      <select id="light" name="light">
-        <option value="">No light</option>
-        {% for key in lights %}
-        <option value="{{ key }}" title="{{ lights[key] }}" {% if light == key %}selected{% endif %}>{{ key }}</option>
-        {% endfor %}
-      </select>
-    </div>
-
-    <div id="camera-block">
-      <label for="camera">Camera <span class="opt">(optional capture device)</span></label>
-      <select id="camera" name="camera">
-        <option value="">No camera</option>
-        {% for key in cameras %}
-        <option value="{{ key }}" title="{{ cameras[key] }}" {% if camera == key %}selected{% endif %}>{{ key }}</option>
-        {% endfor %}
-      </select>
+      <label class="check"><input type="checkbox" name="realbody" value="1"> Real body <span class="opt">(body detailing: skin grain, joints, natural posture)</span></label>
     </div>
 
     <div id="char-block">
@@ -113,20 +119,23 @@
       <input id="ref_images" name="ref_images" type="file" accept="image/*" multiple>
     </div>
 
-    <div class="grid">
-      <div><label>Width</label><input name="width" type="number" value="608" min="256" max="2048" step="32"></div>
-      <div><label>Height</label><input name="height" type="number" value="608" min="256" max="2048" step="32"></div>
-      <div><label>Steps</label><input id="steps" name="steps" type="number" value="20" min="1" max="100"></div>
-      <div><label>Seed <span class="opt">(0 = random)</span></label><input id="seed" name="seed" type="number" value="0"></div>
-      <div><label>Batch <span class="opt">(1–8, queued on one warm container)</span></label><input name="batch" type="number" value="1" min="1" max="8"></div>
-      <div><label>GPU <span class="opt">($/hr)</span></label>
-        <div class="seg" role="radiogroup" aria-label="GPU">
-          <label><input type="radio" name="gpu" value="T4"><span>T4 · $0.59</span></label>
-          <label><input type="radio" name="gpu" value="L4" checked><span>L4 · $0.80</span></label>
+    <details class="advanced">
+      <summary>Advanced — size · steps · seed · batch · gpu · warm</summary>
+      <div class="grid">
+        <div><label>Width</label><input name="width" type="number" value="608" min="256" max="2048" step="32"></div>
+        <div><label>Height</label><input name="height" type="number" value="608" min="256" max="2048" step="32"></div>
+        <div><label>Steps</label><input id="steps" name="steps" type="number" value="20" min="1" max="100"></div>
+        <div><label>Seed <span class="opt">(0 = random)</span></label><input id="seed" name="seed" type="number" value="0"></div>
+        <div><label>Batch <span class="opt">(1–8, queued on one warm container)</span></label><input name="batch" type="number" value="1" min="1" max="8"></div>
+        <div><label>GPU <span class="opt">($/hr)</span></label>
+          <div class="seg" role="radiogroup" aria-label="GPU">
+            <label><input type="radio" name="gpu" value="T4"><span>T4 · $0.59</span></label>
+            <label><input type="radio" name="gpu" value="L4" checked><span>L4 · $0.80</span></label>
+          </div>
         </div>
+        <div><label>Keep warm <span class="opt">(s, bills GPU while idle)</span></label><input name="scaledown" type="number" value="2" min="2" max="600"></div>
       </div>
-      <div><label>Keep warm <span class="opt">(s, bills GPU while idle)</span></label><input name="scaledown" type="number" value="2" min="2" max="600"></div>
-    </div>
+    </details>
 
     <div class="btn-row">
       <button type="submit" name="flow" value="generate">Generate on Modal</button>
@@ -172,6 +181,17 @@
         <li><b>over-shoulder</b> — looking back, body turned away</li>
         <li><b>sitting-floor</b> — on the ground, elbows on knees, slouched</li>
         <li><b>doing-thing</b> — mid-activity, hands busy, candid</li>
+        <li><b>candid-moment</b> — unposed, caught between actions</li>
+        <li><b>leaning-rail</b> — forearms on a railing, looking into the distance</li>
+      </ul>
+      <h3>Angle</h3>
+      <ul>
+        <li><b>candid-side</b> — camera slightly to the side, subject off-center</li>
+        <li><b>from-behind</b> — camera behind, looking away into the scene</li>
+        <li><b>over-shoulder-view</b> — over the shoulder, past the subject</li>
+        <li><b>low-angle</b> — slight low angle at chest height</li>
+        <li><b>high-angle</b> — slight high angle, phone above</li>
+        <li><b>dutch-tilt</b> — subtle tilt, handheld feel</li>
       </ul>
       <h3>Style (light)</h3>
       <ul>
@@ -212,7 +232,7 @@
         <li><b>blue-hour</b> — deep twilight, quiet mood</li>
         <li><b>studio-softbox</b> — clean controlled key light</li>
       </ul>
-      <p class="hint">Pose, style, scene and lens stack — pick one of each. Hover any dropdown option for its exact prompt text.</p>
+      <p class="hint">Every row stacks — pick one per category, click again to clear. Hover any pill for its exact prompt text.</p>
     </div>
   </details>
   <p class="hint" id="mode-hint"></p>
@@ -291,12 +311,7 @@ function applyMode(setDefaults) {
   document.getElementById("mode-hint").textContent = info.hint;
   document.getElementById("refs-block").style.display = info.showRefs ? "" : "none";
   document.getElementById("char-block").style.display = info.showChar ? "" : "none";
-  document.getElementById("preset-block").style.display = (m === "generate" || m === "turbo") ? "" : "none";
-  document.getElementById("style-block").style.display = (m === "generate" || m === "turbo") ? "" : "none";
-  document.getElementById("scene-block").style.display = (m === "generate" || m === "turbo") ? "" : "none";
-  document.getElementById("lens-block").style.display = (m === "generate" || m === "turbo") ? "" : "none";
-  document.getElementById("light-block").style.display = (m === "generate" || m === "turbo") ? "" : "none";
-  document.getElementById("camera-block").style.display = (m === "generate" || m === "turbo") ? "" : "none";
+  document.getElementById("matrix").style.display = (m === "generate" || m === "turbo") ? "" : "none";
   document.getElementById("enhance-btn").style.display = (m === "generate" || m === "turbo") ? "" : "none";
   document.getElementById("eg-btn").style.display = (m === "generate" || m === "turbo") ? "" : "none";
   promptEl.required = info.promptRequired;
@@ -314,6 +329,56 @@ function applyMode(setDefaults) {
 }
 modeEl.addEventListener("change", () => applyMode(true));
 applyMode(false);
+
+// Preset matrix: one pill per category, click the selected pill to clear it.
+document.querySelectorAll(".mpills").forEach(strip => {
+  const input = document.getElementById(strip.dataset.target);
+  const pills = [...strip.querySelectorAll(".pill")];
+  pills.forEach(p => p.classList.toggle("on", !!input.value && p.dataset.value === input.value));
+  strip.addEventListener("click", (ev) => {
+    const pill = ev.target.closest(".pill");
+    if (!pill) return;
+    const wasOn = pill.classList.contains("on") && input.value === pill.dataset.value;
+    pills.forEach(p => p.classList.remove("on"));
+    if (wasOn) {
+      input.value = "";
+    } else {
+      pill.classList.add("on");
+      input.value = pill.dataset.value;
+    }
+  });
+
+  // Strips scroll horizontally: mouse wheel pans, left-drag pans, touch native.
+  strip.addEventListener("wheel", (ev) => {
+    if (strip.scrollWidth <= strip.clientWidth || Math.abs(ev.deltaX) > Math.abs(ev.deltaY)) return;
+    ev.preventDefault();
+    strip.scrollLeft += ev.deltaY;
+  }, {passive: false});
+  let dragging = false, dragX = 0, dragLeft = 0, dragged = false;
+  strip.addEventListener("pointerdown", (ev) => {
+    if (ev.pointerType !== "mouse" || ev.button !== 0) return;
+    dragging = true; dragged = false; dragX = ev.clientX; dragLeft = strip.scrollLeft;
+  });
+  strip.addEventListener("pointermove", (ev) => {
+    if (!dragging) return;
+    const dx = ev.clientX - dragX;
+    if (!dragged && Math.abs(dx) > 4) {
+      dragged = true;
+      strip.setPointerCapture(ev.pointerId);
+      strip.style.cursor = "grabbing";
+    }
+    if (dragged) { strip.scrollLeft = dragLeft - dx; ev.preventDefault(); }
+  });
+  const endDrag = () => { dragging = false; strip.style.cursor = ""; };
+  strip.addEventListener("pointerup", endDrag);
+  strip.addEventListener("pointercancel", endDrag);
+  strip.addEventListener("click", (ev) => {
+    if (!dragged) return;
+    ev.stopPropagation();
+    ev.preventDefault();
+    dragged = false;
+  }, true);
+});
 
 // Async dispatch: submit creates task(s) and stays on this screen.
 // The buttons carry flow=generate|enhance-generate; fetch asks for JSON.

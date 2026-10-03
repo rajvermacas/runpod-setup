@@ -139,6 +139,52 @@ input[type="file"]::file-selector-button {
 .seg label:has(> input:checked) span { background: var(--safe); color: #160a06; }
 .seg label:has(> input:focus-visible) { outline: 2px solid var(--safe); outline-offset: 2px; }
 
+/* Preset matrix: category rows of pill values — the grid is the structure.
+   One safelight fill marks the active value per row. */
+.matrix { border-bottom: 1px solid var(--line); }
+.mrow {
+  display: grid;
+  grid-template-columns: 7.5ch minmax(0, 1fr);
+  align-items: center;
+  gap: 0.3rem 0.9rem;
+  padding: 0.45rem 0;
+  border-top: 1px solid var(--line);
+}
+.mlabel { display: block; font-size: 0.82rem; font-weight: 600; color: var(--dim); white-space: nowrap; }
+.mpills {
+  display: flex;
+  gap: 0.4rem;
+  overflow-x: auto;
+  padding: 0.25rem 2.6rem 0.25rem 0.05rem;
+  scrollbar-width: none;
+  -webkit-mask-image: linear-gradient(90deg, #000 calc(100% - 2.6rem), transparent);
+  mask-image: linear-gradient(90deg, #000 calc(100% - 2.6rem), transparent);
+}
+.mpills::-webkit-scrollbar { display: none; }
+.pill {
+  flex: none;
+  margin: 0;
+  padding: 0.3rem 0.72rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--dim);
+  font-size: 0.82rem;
+  font-weight: 500;
+  line-height: 1.35;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.pill:hover { border-color: var(--dim); color: var(--ink); }
+.pill.on { background: var(--safe); border-color: var(--safe); color: #160a06; font-weight: 600; }
+.pill.on:hover { background: #ff5a38; border-color: #ff5a38; color: #160a06; }
+
+/* Advanced: size/steps/seed/batch/gpu/warm collapse out of the daily path. */
+details.advanced { margin-top: 1.1rem; }
+.advanced summary { color: var(--dim); }
+.advanced summary:hover, .advanced[open] summary { color: var(--ink); }
+.advanced .grid { margin-top: 0.9rem; }
+
 /* The bold moment: safelight-red action */
 button,
 .btn {
@@ -268,6 +314,8 @@ details ul { color: var(--dim); }
 @media (max-width: 1023px) {
   .shell { grid-template-columns: minmax(0, 1fr); }
   .rail { position: static; max-height: none; }
+  /* Matrix rows stack: label above the strip, strip scrolls. */
+  .mrow { grid-template-columns: 1fr; gap: 0.15rem; }
 }
 
 @media (prefers-reduced-motion: reduce) {

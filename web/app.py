@@ -84,14 +84,26 @@ MODES = ("generate", "edit", "headswap", "turbo")
 # key = form value, value = fragment. Keep fragments pose/composition-only.
 PRESETS = {
     "full-body": "full body shot, entire figure from head to feet fully in frame including feet and footwear, standing pose, camera pulled back to a wide framing",
-    "sitting": "seated position, sitting naturally, three-quarter view",
+    "sitting": "seated naturally on a surface, leant forward slightly, relaxed, three-quarter view",
     "walking": "mid-stride walking toward camera, natural motion, clothes and hair moving slightly",
     "laughing": "caught mid-laugh, genuine crinkled eyes, unposed expression",
     "over-shoulder": "looking back over one shoulder, body three-quarter away",
     "sitting-floor": "sitting on the ground, elbows on knees, slouched naturally",
     "doing-thing": "mid-activity, hands busy holding an everyday object, candid",
-    "looking-away": "gazing off to the side, not at the camera, attention elsewhere",
-    "relaxed-stance": "weight shifted to one leg, arms loose, natural easy stance",
+    "looking-away": "gazing off to the side, not at the camera, unposed candid moment, attention elsewhere",
+    "relaxed-stance": "weight shifted to one leg, arms loose at sides, slouched shoulders, natural easy stance, not posing for the camera",
+    "candid-moment": "unposed candid moment, caught between actions, aware but not posing",
+    "leaning-rail": "leaning on a railing, forearms resting, looking into the distance",
+}
+
+# Camera-angle presets: viewpoint character (stacks with pose and the rest).
+ANGLES = {
+    "candid-side": "candid side angle, subject off-center in frame, camera slightly to the side",
+    "from-behind": "camera behind the subject, looking away into the scene",
+    "over-shoulder-view": "over-the-shoulder view past the subject into the scene",
+    "low-angle": "slight low angle, camera near chest height",
+    "high-angle": "slight high angle, natural phone-above view",
+    "dutch-tilt": "subtle camera tilt, informal handheld feel",
 }
 
 # Everyday scenes: daily-lifestyle backgrounds (third dropdown, stacks with
@@ -142,19 +154,20 @@ STYLES = {
     "film-grain": "35mm film grain, subtle imperfections, analog feel",
 }
 
-# Two opt-in locks (checkboxes, both off by default). Real skin is a
-# SUPERSET of real face: face zones + body-wide realism. Affirmative-only:
-# Qwen's official guide mandates affirmative requirements over prohibitions,
-# and negation words inside a positive prompt risk the "pink elephant" effect
-# (CVPR'24: models attend to the named concept, not the negation) — especially
-# on Turbo/Qwen at CFG 1.0 where no negative channel exists. Neither mentions
-# clothing; garments come from the subject prompt.
-REAL_FACE = ("visible pores on nose and cheeks, fine vellus hair on cheeks catching sidelight, "
-             "slight facial asymmetry, soft subsurface "
-             "glow at ears and lips, natural lip moisture, catchlight in eyes")
-REAL_SKIN = (REAL_FACE + ", natural real skin over the whole visible body, faint skin oiliness, "
-             "natural uneven tone, matte natural finish with non-uniform specular "
-             "response, subtle film grain")
+# Two opt-in locks (checkboxes, both off by default). Positive-affirmative
+# only — no prohibitions (Qwen guide: state requirements affirmatively;
+# negation words act as strong priors / "pink elephant" in a positive prompt,
+# and Turbo has no negative channel at cfg 1.0).
+REAL_FACE = ("visible pores on nose, forehead and cheeks, fine vellus hair catching sidelight, "
+             "natural uneven tone with soft warmth, slight facial asymmetry, soft subsurface glow "
+             "at ears and lips, natural lip moisture, catchlight in eyes, faint laugh lines, "
+             "unretouched skin with living texture")
+REAL_BODY = ("natural real skin over the whole visible body, visible pores and fine skin grain "
+             "on neck, arms, hands and legs, subtle tonal variation across body zones, knuckle "
+             "and joint creases, natural body hair where expected, matte skin finish with "
+             "non-uniform specular response, subtle film grain, relaxed natural posture, "
+             "anatomically natural proportions")
+
 # Form default; BFS_HEADSWAP=1 keeps the earlier single-purpose toggle working
 # by preselecting headswap.
 DEFAULT_MODE = os.environ.get("DEFAULT_MODE", "headswap" if os.environ.get("BFS_HEADSWAP", "") == "1" else "generate")
@@ -525,6 +538,7 @@ def index(request: Request, mode: str = "", char_error: str = ""):
          "default_prompt": MODE_DEFAULT_PROMPTS[mode],
          "characters": list_characters(), "character": "",
          "presets": PRESETS, "preset": "",
+         "angles": ANGLES, "angle": "",
          "styles": STYLES, "style": "",
          "scenes": SCENES, "scene": "",
          "lenses": LENSES, "lens": "",
@@ -718,13 +732,14 @@ async def generate(
     gpu: str = Form("T4"),
     scaledown: int = Form(2),
     preset: str = Form(""),
+    angle: str = Form(""),
     style: str = Form(""),
     scene: str = Form(""),
     lens: str = Form(""),
     light: str = Form(""),
     camera: str = Form(""),
-    realskin: str = Form(""),
     realface: str = Form(""),
+    realbody: str = Form(""),
 ):
     def _form_ctx(error: str, status: int):
         return templates.TemplateResponse(
@@ -734,6 +749,7 @@ async def generate(
              "default_prompt": prompt or MODE_DEFAULT_PROMPTS.get(mode, ""),
              "characters": list_characters(), "character": character,
              "presets": PRESETS, "preset": preset,
+             "angles": ANGLES, "angle": angle,
              "styles": STYLES, "style": style,
              "scenes": SCENES, "scene": scene,
              "lenses": LENSES, "lens": lens,
@@ -840,6 +856,11 @@ async def generate(
         return _form_ctx("Unknown preset.", 400)
     if preset and mode in ("generate", "turbo"):
         prompt = f"{prompt.strip()}, {PRESETS[preset]}"
+    angle = (angle or "").strip()
+    if angle and angle not in ANGLES:
+        return _form_ctx("Unknown angle.", 400)
+    if angle and mode in ("generate", "turbo"):
+        prompt = f"{prompt.strip()}, {ANGLES[angle]}"
     style = (style or "").strip()
     if style and style not in STYLES:
         return _form_ctx("Unknown style.", 400)
@@ -865,10 +886,10 @@ async def generate(
         return _form_ctx("Unknown camera.", 400)
     if camera and mode in ("generate", "turbo"):
         prompt = f"{prompt.strip()}, {CAMERAS[camera]}"
-    if (realskin or "").strip().lower() in ("1", "on", "true", "yes"):
-        prompt = f"{prompt.strip()}, {REAL_SKIN}"
-    elif (realface or "").strip().lower() in ("1", "on", "true", "yes"):
+    if (realface or "").strip().lower() in ("1", "on", "true", "yes"):
         prompt = f"{prompt.strip()}, {REAL_FACE}"
+    if (realbody or "").strip().lower() in ("1", "on", "true", "yes"):
+        prompt = f"{prompt.strip()}, {REAL_BODY}"
     gpu = (gpu or "T4").upper()
     if gpu not in ("T4", "L4"):
         return _form_ctx("GPU must be T4 or L4.", 400)
