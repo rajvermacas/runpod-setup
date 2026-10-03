@@ -332,6 +332,8 @@ def _poll_modal(call_id: str) -> None:
     job = JOBS.get(call_id)
     if job is None or job["status"] != "pending":
         return
+    if job.get("chain"):
+        return  # chained placeholder: background _eg_chain fills it, not Modal
     elapsed = time.time() - job["created"]
     kind = job.get("kind", "image")
     if job.get("mock"):
@@ -623,7 +625,7 @@ async def generate(
         chain_id = f"eg-{uuid.uuid4().hex[:12]}"
         JOBS[chain_id] = {
             "status": "pending", "png": None, "error": None, "kind": "image",
-            "stage": "enhancing", "prompt": prompt, "original_prompt": prompt,
+            "chain": True, "stage": "enhancing", "prompt": prompt, "original_prompt": prompt,
             "enhanced": False, "ratio": "", "negative": negative_prompt.strip(),
             "width": width, "height": height, "seed": seed, "steps": steps,
             "mode": f"{mode} (enhance+generate)",
