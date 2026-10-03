@@ -130,6 +130,17 @@ input[type="file"]::file-selector-button {
 .grid label { font-size: 0.85rem; min-height: 2.5em; }
 .grid select,
 .grid input { height: 2.75rem; }
+/* Native select boxes render shorter than text inputs in some browsers no
+   matter the height rule — take over rendering with appearance:none. */
+.grid select {
+  appearance: none;
+  -webkit-appearance: none;
+  cursor: pointer;
+  padding-right: 2.1rem;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%23a89a86' fill='none' stroke-width='1.5'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 0.8rem center;
+}
 
 /* The bold moment: safelight-red action */
 button,
