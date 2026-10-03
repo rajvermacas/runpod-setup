@@ -85,7 +85,24 @@ MODES = ("generate", "edit", "headswap", "turbo")
 PRESETS = {
     "full-body": "full body shot, head to feet fully visible, standing pose",
     "sitting": "seated position, sitting naturally, three-quarter view",
+    "walking": "mid-stride walking toward camera, natural motion, clothes and hair moving slightly",
+    "laughing": "caught mid-laugh, genuine crinkled eyes, unposed expression",
+    "over-shoulder": "looking back over one shoulder, body three-quarter away",
+    "sitting-floor": "sitting on the ground, elbows on knees, slouched naturally",
+    "doing-thing": "mid-activity, hands busy holding an everyday object, candid",
 }
+
+# Style presets: light/medium only (second dropdown, stacks with pose).
+STYLES = {
+    "snapshot-flash": "direct phone-flash look at night, slightly harsh light, snapshot aesthetic",
+    "overcast-day": "soft overcast daylight, even tones, muted colors, calm",
+    "golden-hour": "warm low sun, long soft shadows, natural glow",
+    "indoor-lamp": "warm tungsten room light, soft shadows, cozy evening indoors",
+    "film-grain": "35mm film grain, subtle imperfections, analog feel",
+}
+
+# Anti-plastic lock: keeps skin human (counters AI smoothness + LoRA softening).
+REAL_SKIN = "visible skin texture, natural imperfections, no smoothing"
 # Form default; BFS_HEADSWAP=1 keeps the earlier single-purpose toggle working
 # by preselecting headswap.
 DEFAULT_MODE = os.environ.get("DEFAULT_MODE", "headswap" if os.environ.get("BFS_HEADSWAP", "") == "1" else "generate")
@@ -456,6 +473,7 @@ def index(request: Request, mode: str = "", char_error: str = ""):
          "default_prompt": MODE_DEFAULT_PROMPTS[mode],
          "characters": list_characters(), "character": "",
          "presets": PRESETS, "preset": "",
+         "styles": STYLES, "style": "",
          "error": char_error or None},
     )
 
@@ -644,6 +662,8 @@ async def generate(
     gpu: str = Form("T4"),
     scaledown: int = Form(2),
     preset: str = Form(""),
+    style: str = Form(""),
+    realskin: str = Form(""),
 ):
     def _form_ctx(error: str, status: int):
         return templates.TemplateResponse(
@@ -652,7 +672,8 @@ async def generate(
              "modes": MODES, "mode_prompts": MODE_DEFAULT_PROMPTS,
              "default_prompt": prompt or MODE_DEFAULT_PROMPTS.get(mode, ""),
              "characters": list_characters(), "character": character,
-             "presets": PRESETS, "preset": preset},
+             "presets": PRESETS, "preset": preset,
+             "styles": STYLES, "style": style},
             status_code=status,
         )
 
@@ -754,6 +775,13 @@ async def generate(
         return _form_ctx("Unknown preset.", 400)
     if preset and mode in ("generate", "turbo"):
         prompt = f"{prompt.strip()}, {PRESETS[preset]}"
+    style = (style or "").strip()
+    if style and style not in STYLES:
+        return _form_ctx("Unknown style.", 400)
+    if style and mode in ("generate", "turbo"):
+        prompt = f"{prompt.strip()}, {STYLES[style]}"
+    if (realskin or "").strip().lower() in ("1", "on", "true", "yes"):
+        prompt = f"{prompt.strip()}, {REAL_SKIN}"
     gpu = (gpu or "T4").upper()
     if gpu not in ("T4", "L4"):
         return _form_ctx("GPU must be T4 or L4.", 400)

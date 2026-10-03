@@ -275,6 +275,10 @@ details ul { color: var(--dim); }
 .qmode { color: var(--dim); font-size: 0.85rem; margin-left: 0.5rem; }
 .qprompt { margin: 0.3rem 0 0; color: var(--dim); font-size: 0.88rem; overflow-wrap: anywhere; }
 
+/* Checkbox row */
+.check { display: flex; align-items: center; gap: 0.5rem; font-weight: 500; cursor: pointer; }
+.check input[type="checkbox"] { width: 1.05rem; height: 1.05rem; accent-color: var(--safe); }
+
 /* Functional motion only: the waiting spinner answers "still working?" */
 .spinner {
   width: 40px;

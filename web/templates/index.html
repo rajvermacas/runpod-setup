@@ -21,13 +21,27 @@
     </select>
 
     <div id="preset-block">
-      <label for="preset">Preset <span class="opt">(optional composition)</span></label>
+      <label for="preset">Pose <span class="opt">(optional)</span></label>
       <select id="preset" name="preset">
-        <option value="">No preset</option>
+        <option value="">No pose</option>
         {% for key in presets %}
-        <option value="{{ key }}" {% if preset == key %}selected{% endif %}>{{ key }}{% if presets[key] %} — {{ presets[key][:50] }}{% endif %}</option>
+        <option value="{{ key }}" {% if preset == key %}selected{% endif %}>{{ key }}</option>
         {% endfor %}
       </select>
+    </div>
+
+    <div id="style-block">
+      <label for="style">Style <span class="opt">(optional light/medium)</span></label>
+      <select id="style" name="style">
+        <option value="">No style</option>
+        {% for key in styles %}
+        <option value="{{ key }}" {% if style == key %}selected{% endif %}>{{ key }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div id="skin-block">
+      <label class="check"><input type="checkbox" name="realskin" value="1"> Real skin <span class="opt">(texture lock, anti-plastic)</span></label>
     </div>
 
     <div id="char-block">
@@ -185,6 +199,8 @@ function applyMode(setDefaults) {
   document.getElementById("neg-block").style.display = info.showNeg ? "" : "none";
   document.getElementById("char-block").style.display = info.showChar ? "" : "none";
   document.getElementById("preset-block").style.display = (m === "generate" || m === "turbo") ? "" : "none";
+  document.getElementById("style-block").style.display = (m === "generate" || m === "turbo") ? "" : "none";
+  document.getElementById("skin-block").style.display = (m === "generate" || m === "turbo") ? "" : "none";
   document.getElementById("enhance-btn").style.display = (m === "generate" || m === "turbo") ? "" : "none";
   document.getElementById("eg-btn").style.display = (m === "generate" || m === "turbo") ? "" : "none";
   promptEl.required = info.promptRequired;
