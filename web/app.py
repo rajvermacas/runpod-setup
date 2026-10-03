@@ -90,6 +90,8 @@ PRESETS = {
     "over-shoulder": "looking back over one shoulder, body three-quarter away",
     "sitting-floor": "sitting on the ground, elbows on knees, slouched naturally",
     "doing-thing": "mid-activity, hands busy holding an everyday object, candid",
+    "looking-away": "gazing off to the side, not at the camera, attention elsewhere",
+    "relaxed-stance": "weight shifted to one leg, arms loose, natural easy stance",
 }
 
 # Everyday scenes: daily-lifestyle backgrounds (third dropdown, stacks with
@@ -101,6 +103,15 @@ SCENES = {
     "home": "at home in a lived-in living room, sofa and window light behind",
     "market": "in a busy local market, stalls and people blurred behind",
     "beach-day": "on a public beach midday, sea and people in distance",
+}
+
+# Camera presets: capture device character (sixth dropdown, stacks with all).
+CAMERAS = {
+    "phone": "shot on a phone camera, casual snapshot",
+    "iphone": "shot on iphone, casual snapshot, natural colors",
+    "android": "shot on android phone camera, casual snapshot",
+    "dslr": "shot on DSLR, professional photograph, shallow depth of field",
+    "digicam": "shot on compact digital camera with direct flash, night snapshot look",
 }
 
 # Lighting presets: the light itself (fifth dropdown, stacks with all).
@@ -518,6 +529,7 @@ def index(request: Request, mode: str = "", char_error: str = ""):
          "scenes": SCENES, "scene": "",
          "lenses": LENSES, "lens": "",
          "lights": LIGHTS, "light": "",
+         "cameras": CAMERAS, "camera": "",
          "error": char_error or None},
     )
 
@@ -710,6 +722,7 @@ async def generate(
     scene: str = Form(""),
     lens: str = Form(""),
     light: str = Form(""),
+    camera: str = Form(""),
     realskin: str = Form(""),
     realface: str = Form(""),
 ):
@@ -724,7 +737,8 @@ async def generate(
              "styles": STYLES, "style": style,
              "scenes": SCENES, "scene": scene,
              "lenses": LENSES, "lens": lens,
-             "lights": LIGHTS, "light": light},
+             "lights": LIGHTS, "light": light,
+             "cameras": CAMERAS, "camera": camera},
             status_code=status,
         )
 
@@ -846,6 +860,11 @@ async def generate(
         return _form_ctx("Unknown light.", 400)
     if light and mode in ("generate", "turbo"):
         prompt = f"{prompt.strip()}, {LIGHTS[light]}"
+    camera = (camera or "").strip()
+    if camera and camera not in CAMERAS:
+        return _form_ctx("Unknown camera.", 400)
+    if camera and mode in ("generate", "turbo"):
+        prompt = f"{prompt.strip()}, {CAMERAS[camera]}"
     if (realskin or "").strip().lower() in ("1", "on", "true", "yes"):
         prompt = f"{prompt.strip()}, {REAL_SKIN}"
     elif (realface or "").strip().lower() in ("1", "on", "true", "yes"):

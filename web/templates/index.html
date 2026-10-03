@@ -55,7 +55,7 @@
     </div>
 
     <div id="body-block">
-      <label class="check"><input type="checkbox" name="realbody" value="1"> Real body <span class="opt">(anatomy + clothing lock)</span></label>
+      <label class="check"><input type="checkbox" name="realbody" value="1"> Real body <span class="opt">(body-wide realism, anti-glow)</span></label>
     </div>
 
     <div id="lens-block">
@@ -74,6 +74,16 @@
         <option value="">No light</option>
         {% for key in lights %}
         <option value="{{ key }}" title="{{ lights[key] }}" {% if light == key %}selected{% endif %}>{{ key }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
+    <div id="camera-block">
+      <label for="camera">Camera <span class="opt">(optional capture device)</span></label>
+      <select id="camera" name="camera">
+        <option value="">No camera</option>
+        {% for key in cameras %}
+        <option value="{{ key }}" title="{{ cameras[key] }}" {% if camera == key %}selected{% endif %}>{{ key }}</option>
         {% endfor %}
       </select>
     </div>
@@ -101,11 +111,6 @@
     <div id="refs-block">
       <label for="ref_images">Reference images <span class="opt" id="refs-hint"></span></label>
       <input id="ref_images" name="ref_images" type="file" accept="image/*" multiple>
-    </div>
-
-    <div id="neg-block">
-      <label for="negative_prompt">Negative prompt <span class="opt">(optional)</span></label>
-      <input id="negative_prompt" name="negative_prompt" type="text" placeholder="blurry, low quality">
     </div>
 
     <div class="grid">
@@ -192,6 +197,12 @@
         <li><b>85mm</b> — tight portrait, blurred background</li>
         <li><b>135mm</b> — flat telephoto, creamy distance</li>
       </ul>
+      <h3>Camera</h3>
+      <ul>
+        <li><b>phone / iphone / android</b> — casual snapshot, natural colors</li>
+        <li><b>dslr</b> — professional, shallow depth of field</li>
+        <li><b>digicam</b> — direct flash night snapshot look</li>
+      </ul>
       <h3>Light</h3>
       <ul>
         <li><b>soft-window</b> — gentle one-side daylight, calm</li>
@@ -249,25 +260,25 @@ const INFO = {
     sub: "Text-to-image on Modal GPU (Qwen-Image 2.1 4-bit).",
     refs: "(optional — any refs act as edit references)",
     hint: "Inference takes ~30–60 s on L4 plus cold start. You’ll get a polling page — keep it open.",
-    promptRequired: true, steps: 20, seed: 0, showRefs: true, showNeg: true, showChar: true,
+    promptRequired: true, steps: 20, seed: 0, showRefs: true, showChar: true,
   },
   edit: {
     sub: "Edit with reference photos. Output follows the first reference.",
     refs: "(optional, up to 4 — edit mode follows the first)",
     hint: "Edit runs slightly slower (~40 s on L4): reference latents extend the sequence.",
-    promptRequired: true, steps: 20, seed: 0, showRefs: true, showNeg: true, showChar: true,
+    promptRequired: true, steps: 20, seed: 0, showRefs: true, showChar: true,
   },
   headswap: {
     sub: "BFS head-swap LoRA: body/target first, reference head second.",
     refs: "(required — upload the body, or pick a character slot as the head)",
     hint: "Head-swap takes ~50 s on L4 at 25 steps. No public figures without consent.",
-    promptRequired: false, steps: 25, seed: 0, showRefs: true, showNeg: true, showChar: true,
+    promptRequired: false, steps: 25, seed: 0, showRefs: true, showChar: true,
   },
   turbo: {
     sub: "Z-Image-Turbo: 8-step text-to-image on T4. No reference images.",
     refs: "",
     hint: "Turbo is guidance-distilled: negative prompt is ignored, ~35 s on T4 at 1024².",
-    promptRequired: true, steps: 8, seed: 0, showRefs: false, showNeg: false, showChar: false,
+    promptRequired: true, steps: 8, seed: 0, showRefs: false, showChar: false,
   },
 };
 const modeEl = document.getElementById("mode");
@@ -279,13 +290,13 @@ function applyMode(setDefaults) {
   document.getElementById("refs-hint").textContent = info.refs;
   document.getElementById("mode-hint").textContent = info.hint;
   document.getElementById("refs-block").style.display = info.showRefs ? "" : "none";
-  document.getElementById("neg-block").style.display = info.showNeg ? "" : "none";
   document.getElementById("char-block").style.display = info.showChar ? "" : "none";
   document.getElementById("preset-block").style.display = (m === "generate" || m === "turbo") ? "" : "none";
   document.getElementById("style-block").style.display = (m === "generate" || m === "turbo") ? "" : "none";
   document.getElementById("scene-block").style.display = (m === "generate" || m === "turbo") ? "" : "none";
   document.getElementById("lens-block").style.display = (m === "generate" || m === "turbo") ? "" : "none";
   document.getElementById("light-block").style.display = (m === "generate" || m === "turbo") ? "" : "none";
+  document.getElementById("camera-block").style.display = (m === "generate" || m === "turbo") ? "" : "none";
   document.getElementById("enhance-btn").style.display = (m === "generate" || m === "turbo") ? "" : "none";
   document.getElementById("eg-btn").style.display = (m === "generate" || m === "turbo") ? "" : "none";
   promptEl.required = info.promptRequired;
