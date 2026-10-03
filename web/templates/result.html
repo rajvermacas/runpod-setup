@@ -23,7 +23,23 @@
     {% else %}
     <p class="sub">{{ job.prompt }}</p>
     {% endif %}
-    <img class="out" src="/image/{{ call_id }}" alt="generated image">
+    <img class="out" id="full-img" src="/image/{{ call_id }}" alt="generated image" title="Click for fullscreen">
+    <div id="lightbox" class="lightbox" hidden>
+      <img src="/image/{{ call_id }}" alt="generated image fullscreen">
+    </div>
+    <p><a class="btn" href="/image/{{ call_id }}" download="qwen21_{{ call_id }}.png">Download PNG</a></p>
+<script>
+const rim = document.getElementById("full-img");
+const rlb = document.getElementById("lightbox");
+if (rim && rlb) {
+  rim.style.cursor = "zoom-in";
+  rim.addEventListener("click", () => { rlb.hidden = false; document.body.style.overflow = "hidden"; });
+  rlb.addEventListener("click", () => { rlb.hidden = true; document.body.style.overflow = ""; });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && !rlb.hidden) { rlb.hidden = true; document.body.style.overflow = ""; }
+  });
+}
+</script>
     <p><a class="btn" href="/image/{{ call_id }}" download="qwen21_{{ call_id }}.png">Download PNG</a></p>
   {% else %}
     <h1>Failed</h1>
