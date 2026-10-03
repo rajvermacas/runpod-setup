@@ -126,7 +126,7 @@ _load_dotenv()
 OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "")
 OPENROUTER_MODEL = os.environ.get("OPENROUTER_MODEL", "inclusionai/ling-3.1-flash")
 
-ENHANCE_SYSTEM = (
+ENHANCE_SYSTEM_FALLBACK = (
     "You are a prompt engineer for the Qwen-Image-2.1 text-to-image model. "
     "Expand the user's short idea into one detailed English image prompt: "
     "concrete subject, action/pose, environment texture, light direction and color, "
@@ -134,6 +134,20 @@ ENHANCE_SYSTEM = (
     'Reply with JSON only: {"rewritten_prompt": "<single detailed prompt>", '
     '"wh_ratio": "<W:H suggestion like 16:9, or empty>"}.'
 )
+
+
+def _enhance_system() -> str:
+    """Official Qwen-Image-2.1 T2I rewriter system prompt (vendored from
+    QwenLM/Qwen-Image-2.1 prompt_rewrite/prompts/system_prompt_t2i.txt),
+    so Enhance follows Qwen's own rewriting contract verbatim."""
+    try:
+        return (BASE_DIR / "prompts" / "enhance_t2i.txt").read_text()
+    except FileNotFoundError:
+        log.warning("official enhance prompt missing, using fallback")
+        return ENHANCE_SYSTEM_FALLBACK
+
+
+ENHANCE_SYSTEM = _enhance_system()
 
 # Saved character slots: web/characters/<name>.png|jpg + <name>.txt (identity anchor).
 CHARACTERS_DIR = BASE_DIR / "characters"
@@ -310,11 +324,13 @@ def _openrouter_enhance(text: str, timeout: int = 90) -> dict:
                     api_key=OPENROUTER_API_KEY, timeout=timeout)
     # NOTE: no response_format — the serving provider rejects structured
     # outputs. The system prompt already demands JSON-only; parse leniently.
+    # max_tokens 4096: the official contract runs ~20 sentences/500 words
+    # plus reasoning headroom — 1024 truncates to an empty reply.
     resp = client.chat.completions.create(
         model=OPENROUTER_MODEL,
         messages=[{"role": "system", "content": ENHANCE_SYSTEM},
                   {"role": "user", "content": text}],
-        temperature=0.7, max_tokens=1024,
+        temperature=0.7, max_tokens=4096,
     )
     content = (resp.choices[0].message.content or "").strip()
     if content.startswith("```"):
