@@ -60,12 +60,12 @@ Defaults are the **official Qwen-Image 2.1 settings** (25 steps, CFG 1.0, euler 
 | `--scaledown-window` | 60 | idle seconds before the container scales down; raise it (e.g. 300) to keep a warm container between runs |
 | `--out` | `qwen21_direct_out.png` | local output path |
 
-GPU is selected with the `MODAL_GPU` env var (default `L4`).
+GPU is selected with the `MODAL_GPU` env var (default `T4`).
 
 ### Execution examples
 
 ```bash
-# 1) default run (L4, official sampling: 25 steps / CFG 1 / euler + simple)
+# 1) default run (T4, official sampling: 25 steps / CFG 1 / euler + simple)
 modal run modal_qwen21_direct.py --prompt "a cat in a spacesuit" --out cat.png
 
 # 2) cheapest hourly rate (T4, slower with a recoverable decode OOM warning)
@@ -82,7 +82,7 @@ modal run modal_qwen21_direct.py \
   --steps 20 --cfg 6.0 --sampler euler --scheduler simple \
   --negative "blurry, low quality" --out sloth.png
 
-# 5) native 2K output (default L4; slower)
+# 5) native 2K output (T4 default; slower — prefer L4 for 2K)
 modal run modal_qwen21_direct.py \
   --prompt "aerial view of a coral reef, turquoise water, ultra detailed" \
   --width 2048 --height 2048 --out reef_2k.png
@@ -174,7 +174,7 @@ MOCK_MODAL=1 python3 -m uvicorn web.app:app --port 8000
 ### Cheap testing tips
 
 - Size **512×512**, steps **10–15** — biggest cost savers.
-- Keep L4 (default): cheaper **per image** (~$0.025) than T4 (~$0.038) despite the higher hourly rate.
+- Prefer L4 for lowest **per image** cost (~$0.025) vs T4 (~$0.038) despite the higher hourly rate (`MODAL_GPU=L4`).
 - Infra is already minimal: 0 warm containers, `scaledown_window=2s`, `max_containers=1`, `max_inputs=1`, 10-min timeout.
 
 Env overrides: `MODAL_APP_NAME`, `MODAL_CLS_NAME` (Qwen path), `BFS_MODAL_APP_NAME`, `BFS_MODAL_CLS_NAME` (head-swap path), `TURBO_MODAL_APP_NAME`, `TURBO_MODAL_CLS_NAME` (Turbo path), `DEFAULT_MODE` (form preselect: `generate`/`edit`/`headswap`/`turbo`), `MOCK_MODAL=1`.
@@ -216,10 +216,10 @@ Edit mode (one 1024² reference) adds ~25% to inference: **41.5 s** on L4 (vs 33
 | GPU | $/hr | Notes |
 |---|---|---|
 | T4 | 0.59 | cheapest hourly; 16 GB — works at 1024px with a recoverable decode OOM warning; slow (Turing has no native int8/FP8 paths) |
-| **L4** | 0.80 | 24 GB — **default**; **best value per image** (~2× faster wall, ~35% cheaper per image than T4) |
+| **L4** | 0.80 | 24 GB — **best value per image** (~2× faster wall, ~35% cheaper per image than T4); select with `MODAL_GPU=L4` |
 | B200 | 6.25 | native NVFP4 kernels for `--use-nvfp4-dit` |
 
-Select with `MODAL_GPU=T4 modal run modal_qwen21_direct.py ...` (default: L4).
+Select with `MODAL_GPU=L4 modal run modal_qwen21_direct.py ...` (default: T4).
 
 ## Z-Image-Turbo on T4 (direct nodes)
 
@@ -287,7 +287,7 @@ LoRA weights, auto-downloaded at image build into `ComfyUI/models/loras/`:
 ### Execution commands
 
 ```bash
-# basic swap (L4 default, v1.1 LoRA @ 1.0, 25 steps / CFG 1 / euler + simple)
+# basic swap (T4 default, v1.1 LoRA @ 1.0, 25 steps / CFG 1 / euler + simple)
 # verified 2026-10-03 on L4: ~53 s inference, output follows the body image size
 modal run modal_bfs_headswap_direct.py --body-image woman.png --head-image man.png --out headswap_out.png
 
@@ -320,7 +320,7 @@ modal run modal_bfs_headswap_direct.py --body-image woman.png --head-image man.p
 | `--scaledown-window` | 2 | idle seconds before scale-down |
 | `--out` | `bfs_headswap_out.png` | local output path |
 
-GPU default is L4 (`MODAL_GPU` override, same as the Qwen script). The BFS reference workflow's `deis_2m` sampler needs the res4lyf custom-node pack, so the script defaults to `euler`/`simple` to stay dependency-identical to `modal_qwen21_direct.py`.
+GPU default is T4 (`MODAL_GPU` override, same as the Qwen script). The BFS reference workflow's `deis_2m` sampler needs the res4lyf custom-node pack, so the script defaults to `euler`/`simple` to stay dependency-identical to `modal_qwen21_direct.py`.
 
 ## Generic workflow runner (any workflow JSON)
 
@@ -337,7 +337,7 @@ modal run modal_workflow_direct.py --workflow image_z_image_turbo_int8.json --pr
 modal run modal_workflow_direct.py --workflow qwen21_workflow_api.json --prompt "a red fox in a snowy forest" --random-seed --out fox.png
 ```
 
-`--prompt` is injected into the positive text encoder (auto-traced via the sampler; `--prompt-node <id|title>` to pick explicitly). Seed priority: explicit `--seed N` > `--seed 0` / `--random-seed` (random) > workflow's own seed (literal, or its randomize-control) > template fallback (random, logged). Models lazy-download on first use from a registry (Qwen-Image 2.1 + Z-Image-Turbo sets) into volume `workflow-comfy-cache`. Overrides: `--steps/--cfg/--sampler/--scheduler/--width/--height/--negative/--unet/--clip/--vae/--ckpt`. L4 default, `MODAL_GPU` override. Verified 2026-09-25 on L4: official Z-Image int8 template (UI+subgraph, template seed) in 38.5 s, Qwen API workflow (`--seed 42`) in 48.4 s — both 1024², correct output.
+`--prompt` is injected into the positive text encoder (auto-traced via the sampler; `--prompt-node <id|title>` to pick explicitly). Seed priority: explicit `--seed N` > `--seed 0` / `--random-seed` (random) > workflow's own seed (literal, or its randomize-control) > template fallback (random, logged). Models lazy-download on first use from a registry (Qwen-Image 2.1 + Z-Image-Turbo sets) into volume `workflow-comfy-cache`. Overrides: `--steps/--cfg/--sampler/--scheduler/--width/--height/--negative/--unet/--clip/--vae/--ckpt`. T4 default, `MODAL_GPU` override. Verified 2026-09-25 on L4: official Z-Image int8 template (UI+subgraph, template seed) in 38.5 s, Qwen API workflow (`--seed 42`) in 48.4 s — both 1024², correct output.
 
 ## Files
 
@@ -357,7 +357,7 @@ modal run modal_workflow_direct.py --workflow qwen21_workflow_api.json --prompt 
 ## Troubleshooting
 
 - **`KeyError: 'TextEncodeQwenImage21'`** — importing ComfyUI `nodes` directly registers core nodes only. The code calls `asyncio.run(nodes.init_extra_nodes(init_custom_nodes=False, init_api_nodes=False))` before reading `NODE_CLASS_MAPPINGS`; keep that call if you modify `load()`.
-- **`memory allocation failed with OOM` during decode** — only happens when overriding to `MODAL_GPU=T4` at 1024px; ComfyUI falls back and still saves the image. The default L4 (24 GB) has headroom and shows no warning.
+- **`memory allocation failed with OOM` during decode** — can happen on the T4 default (16 GB) at 1024px; ComfyUI falls back and still saves the image. Override to `MODAL_GPU=L4` (24 GB) for headroom and no warning.
 - **Edit output size ignores `--width/--height`** — expected in edit mode: the output follows the first reference's aspect ratio, resized to the working resolution (`max(width, height)`). Text-to-image uses `--width/--height` exactly.
 - **First run slow / model download** — models live in the Modal Volume `qwen21-comfy-cache`; the first build downloads ~14 GB. Subsequent runs are fast.
 - **License** — Qwen weights are under the Qwen Research License (research/evaluation; non-commercial).
