@@ -98,12 +98,12 @@ class PERewrite:
         print("PE-T2I loaded", flush=True)
 
     @modal.method()
-    def rewrite(self, prompt: str, max_tokens: int = 2048) -> dict:
+    def rewrite(self, prompt: str, max_tokens: int = 4096) -> dict:
         """Brief request -> {"rewritten_prompt": str, "wh_ratio": str}.
 
-        Thinking mode always ON: verified live that no-think emits prose
-        instead of the JSON contract (wasted a full attempt). 2048 tokens
-        comfortably fits think + answer (~1050 observed).
+        Thinking mode always ON (no-think emits prose, not the JSON contract).
+        4096 cap: observed thinks run 700-1100 tokens before the answer;
+        2048 truncated one mid-think into an empty result.
         """
         import time
         import torch
@@ -141,7 +141,7 @@ class PERewrite:
 
 @app.local_entrypoint()
 def main(prompt: str = "astronaut cat riding a horse in the rain",
-         max_tokens: int = 2048):
+         max_tokens: int = 4096):
     if not prompt.strip():
         raise ValueError("--prompt is required")
     out: dict = PERewrite().rewrite.remote(prompt, max_tokens)
