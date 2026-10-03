@@ -107,7 +107,7 @@ ANGLES = {
 }
 
 # Everyday scenes: daily-lifestyle backgrounds (third dropdown, stacks with
-# pose + style). Nothing fancy — the anti-studio list.
+# pose + light). Nothing fancy — the anti-studio list.
 SCENES = {
     "street": "on a normal city street, shops and parked cars behind, daytime",
     "cafe": "sitting in a casual cafe, coffee cup on table, blurred interior behind",
@@ -126,8 +126,14 @@ CAMERAS = {
     "digicam": "shot on compact digital camera with direct flash, night snapshot look",
 }
 
-# Lighting presets: the light itself (fifth dropdown, stacks with all).
+# Lighting presets: the light itself (fifth dropdown, stacks with all). Style
+# presets were merged in here — both describe lighting, film-grain is a tone.
 LIGHTS = {
+    "snapshot-flash": "direct phone-flash look at night, slightly harsh light, snapshot aesthetic",
+    "overcast-day": "soft overcast daylight, even tones, muted colors, calm",
+    "golden-hour": "warm low sun, long soft shadows, natural glow",
+    "indoor-lamp": "warm tungsten room light, soft shadows, cozy evening indoors",
+    "film-grain": "35mm film grain, subtle imperfections, analog feel",
     "soft-window": "soft window light from one side, gentle falloff, calm",
     "neon-night": "neon signs glowing at night, cyan-magenta reflections, dark streets",
     "harsh-noon": "hard midday sun overhead, crisp short shadows, high contrast",
@@ -143,15 +149,6 @@ LENSES = {
     "50mm": "shot on 50mm lens, natural proportions, eye-level",
     "85mm": "shot on 85mm portrait lens, shallow depth of field, compressed background",
     "135mm": "shot on 135mm telephoto, creamy bokeh, flat compressed perspective",
-}
-
-# Style presets: light/medium only (second dropdown, stacks with pose).
-STYLES = {
-    "snapshot-flash": "direct phone-flash look at night, slightly harsh light, snapshot aesthetic",
-    "overcast-day": "soft overcast daylight, even tones, muted colors, calm",
-    "golden-hour": "warm low sun, long soft shadows, natural glow",
-    "indoor-lamp": "warm tungsten room light, soft shadows, cozy evening indoors",
-    "film-grain": "35mm film grain, subtle imperfections, analog feel",
 }
 
 # Two opt-in locks (checkboxes, both off by default). Positive-affirmative
@@ -539,7 +536,6 @@ def index(request: Request, mode: str = "", char_error: str = ""):
          "characters": list_characters(), "character": "",
          "presets": PRESETS, "preset": "",
          "angles": ANGLES, "angle": "",
-         "styles": STYLES, "style": "",
          "scenes": SCENES, "scene": "",
          "lenses": LENSES, "lens": "",
          "lights": LIGHTS, "light": "",
@@ -733,7 +729,6 @@ async def generate(
     scaledown: int = Form(2),
     preset: str = Form(""),
     angle: str = Form(""),
-    style: str = Form(""),
     scene: str = Form(""),
     lens: str = Form(""),
     light: str = Form(""),
@@ -750,7 +745,6 @@ async def generate(
              "characters": list_characters(), "character": character,
              "presets": PRESETS, "preset": preset,
              "angles": ANGLES, "angle": angle,
-             "styles": STYLES, "style": style,
              "scenes": SCENES, "scene": scene,
              "lenses": LENSES, "lens": lens,
              "lights": LIGHTS, "light": light,
@@ -861,11 +855,6 @@ async def generate(
         return _form_ctx("Unknown angle.", 400)
     if angle and mode in ("generate", "turbo"):
         prompt = f"{prompt.strip()}, {ANGLES[angle]}"
-    style = (style or "").strip()
-    if style and style not in STYLES:
-        return _form_ctx("Unknown style.", 400)
-    if style and mode in ("generate", "turbo"):
-        prompt = f"{prompt.strip()}, {STYLES[style]}"
     scene = (scene or "").strip()
     if scene and scene not in SCENES:
         return _form_ctx("Unknown scene.", 400)

@@ -40,15 +40,6 @@
         <input type="hidden" id="angle" name="angle" value="{{ angle }}">
       </div>
       <div class="mrow">
-        <span class="mlabel">Style</span>
-        <div class="mpills" data-target="style">
-          {% for key, fragment in styles.items() %}
-          <button type="button" class="pill{% if style == key %} on{% endif %}" data-value="{{ key }}" title="{{ fragment }}">{{ key }}</button>
-          {% endfor %}
-        </div>
-        <input type="hidden" id="style" name="style" value="{{ style }}">
-      </div>
-      <div class="mrow">
         <span class="mlabel">Light</span>
         <div class="mpills" data-target="light">
           {% for key, fragment in lights.items() %}
@@ -193,14 +184,6 @@
         <li><b>high-angle</b> — slight high angle, phone above</li>
         <li><b>dutch-tilt</b> — subtle tilt, handheld feel</li>
       </ul>
-      <h3>Style (light)</h3>
-      <ul>
-        <li><b>snapshot-flash</b> — phone-flash at night, slightly harsh, most realistic signal</li>
-        <li><b>overcast-day</b> — flat daylight, even tones, calm</li>
-        <li><b>golden-hour</b> — warm low sun, natural glow</li>
-        <li><b>indoor-lamp</b> — warm room light, cozy evening</li>
-        <li><b>film-grain</b> — analog grain over everything, kills smoothness globally</li>
-      </ul>
       <h3>Scene (background)</h3>
       <ul>
         <li><b>street / market</b> — city life behind, blurred people and shops</li>
@@ -225,6 +208,11 @@
       </ul>
       <h3>Light</h3>
       <ul>
+        <li><b>snapshot-flash</b> — phone-flash at night, slightly harsh</li>
+        <li><b>overcast-day</b> — flat daylight, even tones, calm</li>
+        <li><b>golden-hour</b> — warm low sun, natural glow</li>
+        <li><b>indoor-lamp</b> — warm room light, cozy evening</li>
+        <li><b>film-grain</b> — analog grain over everything, kills smoothness globally</li>
         <li><b>soft-window</b> — gentle one-side daylight, calm</li>
         <li><b>neon-night</b> — cyan-magenta glow, dark streets</li>
         <li><b>harsh-noon</b> — hard overhead sun, crisp shadows</li>
