@@ -262,6 +262,20 @@
       </div>
       <label for="edit-prompt">Prompt</label>
       <textarea id="edit-prompt" name="prompt" rows="4" placeholder="describe the edit…">{{ edit_prompt }}</textarea>
+      <details class="advanced">
+        <summary>Advanced — steps · seed · gpu · warm</summary>
+        <div class="grid">
+          <div><label>Steps</label><input name="steps" type="number" value="25" min="1" max="100"></div>
+          <div><label>Seed <span class="opt">(0 = random)</span></label><input name="seed" type="number" value="0"></div>
+          <div><label>GPU <span class="opt">($/hr)</span></label>
+            <div class="seg" role="radiogroup" aria-label="GPU">
+              <label><input type="radio" name="gpu" value="T4"><span>T4 · $0.59</span></label>
+              <label><input type="radio" name="gpu" value="L4" checked><span>L4 · $0.80</span></label>
+            </div>
+          </div>
+          <div><label>Keep warm <span class="opt">(s, bills GPU while idle)</span></label><input name="scaledown" type="number" value="2" min="2" max="600"></div>
+        </div>
+      </details>
       <div class="btn-row"><button type="submit">Generate</button></div>
       <div class="i2i-result" id="i2i-edit-result" hidden></div>
     </form>
@@ -292,6 +306,20 @@
       </div>
       <label for="swap-prompt">Prompt</label>
       <textarea id="swap-prompt" name="prompt" rows="4">{{ swap_prompt }}</textarea>
+      <details class="advanced">
+        <summary>Advanced — steps · seed · gpu · warm</summary>
+        <div class="grid">
+          <div><label>Steps</label><input name="steps" type="number" value="25" min="1" max="100"></div>
+          <div><label>Seed <span class="opt">(0 = random)</span></label><input name="seed" type="number" value="0"></div>
+          <div><label>GPU <span class="opt">($/hr)</span></label>
+            <div class="seg" role="radiogroup" aria-label="GPU">
+              <label><input type="radio" name="gpu" value="T4"><span>T4 · $0.59</span></label>
+              <label><input type="radio" name="gpu" value="L4" checked><span>L4 · $0.80</span></label>
+            </div>
+          </div>
+          <div><label>Keep warm <span class="opt">(s, bills GPU while idle)</span></label><input name="scaledown" type="number" value="2" min="2" max="600"></div>
+        </div>
+      </details>
       <div class="btn-row"><button type="submit" id="swap-submit">Generate</button></div>
       <p class="hint" id="swap-hint" aria-live="polite"></p>
       <div class="i2i-result" id="i2i-swap-result" hidden></div>
