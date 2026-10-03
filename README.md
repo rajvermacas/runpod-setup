@@ -127,9 +127,7 @@ Custom UI in `web/` — mode dropdown (**Generate** / **Edit** / **Head-swap** /
 | Head-swap | `Cls.from_name("bfs-headswap-direct", "BFSHeadSwapDirect")` | exactly 2 images: body/target first, reference head second |
 | Turbo | `Cls.from_name("zimage-turbo-direct", "ZImageTurboDirect")` | prompt only, 8 steps (refs rejected, negative ignored) |
 
-Two helpers ride along:
-- **Character slots** — save a portrait once (`Save a character slot` form → `web/characters/`), pick it from the Character dropdown. The portrait auto-attaches as an identity reference and its anchor text injects into the prompt. In Head-swap mode the slot portrait becomes the head, so one body upload suffices. `No character` = fresh generation, nothing attached.
-- **Enhance prompt** (Generate/Turbo) — `PE-T2I` rewrite on Modal GPU (`Cls.from_name("qwen21-pe-rewrite", "PERewrite")`, L4-fixed: 9B bf16 needs 24 GB). Fills the box with the detailed prompt, shows the suggested aspect ratio.
+Character slots round it out: save a portrait once (`Save a character slot` form → `web/characters/`), pick it from the Character dropdown. The portrait auto-attaches as an identity reference and its anchor text injects into the prompt. In Head-swap mode the slot portrait becomes the head, so one body upload suffices. `No character` = fresh generation, nothing attached.
 
 ### Prerequisites
 
@@ -137,7 +135,6 @@ Two helpers ride along:
 modal deploy modal_qwen21_direct.py        # one time each — backend lookups need deployed apps
 modal deploy modal_bfs_headswap_direct.py
 modal deploy modal_zimage_turbo_direct.py
-modal deploy modal_pe_rewriter.py          # prompt enhancement only
 pip install -r web/requirements.txt
 ```
 
