@@ -19,9 +19,9 @@ Optional true-4-bit DiT (community):
   diffusion_models/qwen_image_2.1_nvfp4.safetensors (3.91 GB,
     pottokao/Qwen-Image-2.1-DiT-NVFP4-ComfyUI)
 
-GPU: T4 ($0.59/hr, cheapest hourly) by default — slower, 16 GB, expect a
-recoverable decode OOM warning at 1024px. Override with MODAL_GPU=L4
-($0.80/hr, fastest and cheapest per image) or MODAL_GPU=B200 (native NVFP4).
+GPU: L4 ($0.80/hr, fastest and cheapest per image) by default. Override
+with MODAL_GPU=T4 ($0.59/hr, cheapest hourly — slower, 16 GB, expect a
+recoverable decode OOM warning at 1024px) or MODAL_GPU=B200 (native NVFP4).
 
 Run:
   modal setup
@@ -116,7 +116,7 @@ app = modal.App(APP_NAME, image=image)
 
 
 @app.cls(
-    gpu=os.environ.get("MODAL_GPU", "T4"),  # default T4; override: MODAL_GPU=L4 modal run ...
+    gpu=os.environ.get("MODAL_GPU", "L4"),  # default L4; override: MODAL_GPU=T4 modal run ...
     volumes={"/cache": vol},
     scaledown_window=DEFAULT_SCALEDOWN_WINDOW,
     max_containers=1,  # cap parallel spend while testing; concurrent calls queue

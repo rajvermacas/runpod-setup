@@ -1,4 +1,4 @@
-"""Z-Image-Turbo on Modal T4 — direct ComfyUI Python-library pattern.
+"""Z-Image-Turbo on Modal — direct ComfyUI Python-library pattern.
 
 Mirrors modal_qwen21_direct.py: no server, no /prompt API, no comfy-sdk.
 Uses ComfyUI nodes in-process via NODE_CLASS_MAPPINGS:
@@ -27,8 +27,8 @@ Sampling mirrors the official ComfyUI int8 template
 ModelSamplingAuraFlow (shift 3) -> KSampler, negative = ConditioningZeroOut
 of positive (Turbo uses guidance 0 / cfg 1.0, so no negative prompt).
 
-GPU: T4 (16 GB, $0.59/hr) by default — the whole point of this script.
-Override with MODAL_GPU=L4 for headroom.
+GPU: L4 (24 GB, $0.80/hr) by default — faster and cheapest per image.
+Override with MODAL_GPU=T4 (16 GB, $0.59/hr, cheapest hourly) for a budget run.
 
 Run:
   modal setup
@@ -56,7 +56,7 @@ DEFAULT_SCALEDOWN_WINDOW = 120
 # Comfy-Org/z_image_turbo is the ComfyUI repack of Tongyi-MAI/Z-Image-Turbo.
 HF_REPO_COMFY = "Comfy-Org/z_image_turbo"
 
-UNET_INT8 = "z_image_turbo_int8_convrot.safetensors"  # 6.20 GB, T4 default
+UNET_INT8 = "z_image_turbo_int8_convrot.safetensors"  # 6.20 GB, default int8 file
 UNET_BF16 = "z_image_turbo_bf16.safetensors"  # 12.3 GB, needs bigger GPU
 CLIP_FP8 = "qwen_3_4b_fp8_mixed.safetensors"  # 5.63 GB, official int8-template default
 CLIP_FP4 = "qwen_3_4b_fp4_mixed.safetensors"  # 3.48 GB, extra VRAM headroom on T4
@@ -114,7 +114,7 @@ app = modal.App(APP_NAME, image=image)
 
 
 @app.cls(
-    gpu=os.environ.get("MODAL_GPU", "T4"),  # default T4; override: MODAL_GPU=L4 modal run ...
+    gpu=os.environ.get("MODAL_GPU", "L4"),  # default L4; override: MODAL_GPU=T4 modal run ...
     volumes={"/cache": vol},
     scaledown_window=DEFAULT_SCALEDOWN_WINDOW,
     max_containers=1,  # cap parallel spend while testing; concurrent calls queue

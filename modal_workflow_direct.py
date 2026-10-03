@@ -28,8 +28,8 @@ registry (Qwen-Image 2.1 + Z-Image-Turbo sets) into the Modal Volume
 `workflow-comfy-cache`. Unknown files fail fast with the exact filename so
 you can extend MODEL_FILES.
 
-GPU: T4 (16 GB, $0.59/hr) by default — cheapest hourly rate.
-Override with MODAL_GPU=L4 (24 GB headroom) / MODAL_GPU=B200.
+GPU: L4 (24 GB headroom, $0.80/hr) by default.
+Override with MODAL_GPU=T4 (16 GB, $0.59/hr, cheapest hourly) / MODAL_GPU=B200.
 
 Run:
   modal setup
@@ -534,7 +534,7 @@ app = modal.App(APP_NAME, image=image)
 
 
 @app.cls(
-    gpu=os.environ.get("MODAL_GPU", "T4"),  # default T4; override: MODAL_GPU=L4 modal run ...
+    gpu=os.environ.get("MODAL_GPU", "L4"),  # default L4; override: MODAL_GPU=T4 modal run ...
     volumes={"/cache": vol},
     scaledown_window=DEFAULT_SCALEDOWN_WINDOW,
     max_containers=1,

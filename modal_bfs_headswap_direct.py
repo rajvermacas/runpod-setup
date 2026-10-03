@@ -23,8 +23,8 @@ LoRA weights (Alissonerdx/BFS-Best-Face-Swap, all drop-in compatible):
 Base weights are shared with modal_qwen21_direct.py via the same Modal
 volume (qwen21-comfy-cache), so no re-download of the ~14 GB base set.
 
-GPU: T4 ($0.59/hr, cheapest hourly) by default, same as modal_qwen21_direct.py.
-Override with MODAL_GPU=L4 ($0.80/hr, faster) or MODAL_GPU=B200.
+GPU: L4 ($0.80/hr, faster) by default, same as modal_qwen21_direct.py.
+Override with MODAL_GPU=T4 ($0.59/hr, cheapest hourly) or MODAL_GPU=B200.
 
 Run:
   modal setup
@@ -143,7 +143,7 @@ app = modal.App(APP_NAME, image=image)
 
 
 @app.cls(
-    gpu=os.environ.get("MODAL_GPU", "T4"),  # default T4; override: MODAL_GPU=L4 modal run ...
+    gpu=os.environ.get("MODAL_GPU", "L4"),  # default L4; override: MODAL_GPU=T4 modal run ...
     volumes={"/cache": vol},
     scaledown_window=DEFAULT_SCALEDOWN_WINDOW,
     max_containers=1,  # cap parallel spend while testing; concurrent calls queue

@@ -372,7 +372,7 @@ def _mock_png(prompt: str, width: int = 512, height: int = 512) -> bytes:
 def _spawn_modal(prompt: str, negative: str, width: int, height: int,
                  seed: int, steps: int, refs: list[bytes], mode: str,
                  char_images: list[bytes] | None = None, identity: str = "",
-                 gpu: str = "T4", scaledown: int = 2) -> str:
+                 gpu: str = "L4", scaledown: int = 2) -> str:
     """Spawn a Modal job, return the FunctionCall id.
 
     char_images/identity come from a saved character slot: portraits append
@@ -382,7 +382,7 @@ def _spawn_modal(prompt: str, negative: str, width: int, height: int,
     """
     t0 = time.time()
     refs = list(refs)
-    gpu = (gpu or "T4").upper()
+    gpu = (gpu or "L4").upper()
     if gpu not in ("T4", "L4"):
         raise ValueError("gpu must be T4 or L4")
     scaledown = max(2, min(int(scaledown or 2), 600))
@@ -764,7 +764,7 @@ async def generate(
     steps: int = Form(25),
     seed: int = Form(0),
     batch: int = Form(1),
-    gpu: str = Form("T4"),
+    gpu: str = Form("L4"),
     scaledown: int = Form(2),
     preset: str = Form(""),
     angle: str = Form(""),
@@ -927,7 +927,7 @@ async def generate(
         prompt = f"{prompt.strip()}, {REAL_FACE}"
     if (realbody or "").strip().lower() in ("1", "on", "true", "yes"):
         prompt = f"{prompt.strip()}, {REAL_BODY}"
-    gpu = (gpu or "T4").upper()
+    gpu = (gpu or "L4").upper()
     if gpu not in ("T4", "L4"):
         return _form_ctx("GPU must be T4 or L4.", 400)
     try:

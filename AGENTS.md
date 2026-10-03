@@ -13,7 +13,7 @@ Whenever I point out or ask you to remember or you catch yourself making the sam
 
 ## GPU runs (Modal)
 - Never start any GPU-billed run (`modal run`, `modal deploy`, `modal serve`, background GPU jobs) without the user's explicit permission for that specific run. Announce the exact command plus expected GPU/time/cost first and wait for approval — no implied consent from debug context (rule set 2026-09-25).
-- Default GPU is always T4 (cheapest hourly) unless the user asks for another GPU for that specific run/script (rule set 2026-09-25).
+- Default GPU is always L4 unless the user explicitly approves T4 for that specific run/script. Never use T4 as a default anywhere (rule updated 2026-10-04).
 
 ## Modal app logs
 - When polling a run, target the current run's app ID explicitly; `modal app list | awk '/qwen21/'` can match an older app of the same name and show stale logs (this caused a false "still failing" report).
