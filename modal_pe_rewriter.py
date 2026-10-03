@@ -97,47 +97,60 @@ class PERewrite:
     def rewrite(self, prompt: str, max_tokens: int = 2048) -> dict:
         """Brief request -> {"rewritten_prompt": str, "wh_ratio": str}.
 
-        Thinking mode OFF: the <think> reasoning block is thousands of
-        tokens of latency we never show. With thinking disabled the model
-        emits just the JSON answer (verified: partition("</think>") below
-        handles both shapes).
+        Thinking mode OFF first (fast: no thousand-token <think> block).
+        If that yields an empty/unparseable answer, retry once WITH thinking
+        (slow but the card's documented path). Either way the timing + raw
+        head are logged for tuning.
         """
         import time
         import torch
 
+        def _once(thinking: bool) -> tuple[dict, int]:
+            messages = [{"role": "user", "content": [{"type": "text", "text": prompt.strip()}]}]
+            try:
+                inputs = self.processor.apply_chat_template(
+                    messages, add_generation_prompt=True, tokenize=True,
+                    return_dict=True, return_tensors="pt",
+                    **({"enable_thinking": thinking} if thinking else {"enable_thinking": False}),
+                )
+            except TypeError:
+                print("enable_thinking unsupported, plain template", flush=True)
+                inputs = self.processor.apply_chat_template(
+                    messages, add_generation_prompt=True, tokenize=True,
+                    return_dict=True, return_tensors="pt",
+                )
+            inputs = inputs.to(self.model.device)
+            with torch.inference_mode():
+                out = self.model.generate(
+                    **inputs, max_new_tokens=max_tokens,
+                    do_sample=True, temperature=1.0, top_p=0.95, top_k=20,
+                )
+            n_new = len(out[0]) - inputs["input_ids"].shape[-1]
+            gen = self.processor.tokenizer.decode(
+                out[0, inputs["input_ids"].shape[-1]:], skip_special_tokens=True)
+            _, _, answer = gen.partition("</think>")
+            try:
+                result = json.loads(answer.strip())
+            except json.JSONDecodeError:
+                result = {"rewritten_prompt": answer.strip(), "wh_ratio": ""}
+            if not isinstance(result, dict):
+                result = {"rewritten_prompt": "", "wh_ratio": ""}
+            result.setdefault("rewritten_prompt", "")
+            result.setdefault("wh_ratio", "")
+            return ({"rewritten_prompt": str(result["rewritten_prompt"]),
+                     "wh_ratio": str(result.get("wh_ratio", ""))}, n_new, gen)
+
         t0 = time.time()
-        messages = [{"role": "user", "content": [{"type": "text", "text": prompt.strip()}]}]
-        try:
-            inputs = self.processor.apply_chat_template(
-                messages, add_generation_prompt=True, tokenize=True,
-                return_dict=True, return_tensors="pt", enable_thinking=False,
-            )
-        except TypeError:
-            print("enable_thinking unsupported, falling back to thinking mode", flush=True)
-            inputs = self.processor.apply_chat_template(
-                messages, add_generation_prompt=True, tokenize=True,
-                return_dict=True, return_tensors="pt",
-            )
-        inputs = inputs.to(self.model.device)
-        with torch.inference_mode():
-            out = self.model.generate(
-                **inputs, max_new_tokens=max_tokens,
-                do_sample=True, temperature=1.0, top_p=0.95, top_k=20,
-            )
-        gen = self.processor.tokenizer.decode(
-            out[0, inputs["input_ids"].shape[-1]:], skip_special_tokens=True)
-        _, _, answer = gen.partition("</think>")
-        try:
-            result = json.loads(answer.strip())
-        except json.JSONDecodeError:
-            result = {"rewritten_prompt": answer.strip(), "wh_ratio": ""}
-        if not isinstance(result, dict) or "rewritten_prompt" not in result:
-            raise RuntimeError(f"PE-T2I returned unparseable output: {gen[:300]!r}")
-        result.setdefault("wh_ratio", "")
-        print(f"rewrite took {time.time()-t0:.1f}s, "
-              f"{len(out[0])-inputs['input_ids'].shape[-1]} new tokens", flush=True)
-        return {"rewritten_prompt": str(result["rewritten_prompt"]),
-                "wh_ratio": str(result.get("wh_ratio", ""))}
+        out, n_new, gen = _once(False)
+        print(f"no-think: {n_new} tokens, raw head: {gen[:200]!r}", flush=True)
+        if not out["rewritten_prompt"].strip():
+            print("no-think empty, retrying with thinking", flush=True)
+            out, n_new, gen = _once(True)
+            print(f"think retry: {n_new} tokens, raw head: {gen[:200]!r}", flush=True)
+        if not out["rewritten_prompt"].strip():
+            raise RuntimeError(f"PE-T2I empty twice; raw tail: {gen[:300]!r}")
+        print(f"rewrite took {time.time()-t0:.1f}s", flush=True)
+        return out
 
 
 @app.local_entrypoint()
