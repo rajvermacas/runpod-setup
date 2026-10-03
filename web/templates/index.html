@@ -7,6 +7,7 @@
 <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
+<div class="shell">
 <main class="card">
   <p class="topnav"><a href="/queue">Queue →</a></p>
   <h1>Generate on Modal</h1>  <p class="sub" id="mode-sub"></p>
@@ -91,6 +92,41 @@
     </form>
   </details>
   <p class="hint" id="mode-hint"></p>
+</main>
+<aside class="rail" aria-label="Task queue">
+  <div class="rail-head"><h2>Queue</h2><span id="rail-count" class="qcount"></span></div>
+  <div id="rail-list" class="rail-list"><p class="hint">No tasks yet — dispatch one from the form.</p></div>
+</aside>
+</div>
+<script>
+async function refreshRail() {
+  const list = document.getElementById("rail-list");
+  const count = document.getElementById("rail-count");
+  const esc = (s) => (s || "").replace(/[&<>"']/g, c =>
+    ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
+  try {
+    const r = await fetch("/queue.json");
+    if (!r.ok) return;
+    const {jobs} = await r.json();
+    const running = jobs.filter(j => j.status === "pending").length;
+    count.textContent = running ? running + " running" : jobs.length ? jobs.length + " done" : "";
+    if (!jobs.length) { list.innerHTML = '<p class="hint">No tasks yet — dispatch one from the form.</p>'; return; }
+    list.innerHTML = jobs.map(j => {
+      const dot = j.status === "pending" ? "●" : (j.error ? "✕" : "■");
+      const cls = j.status === "pending" ? "run" : (j.error ? "err" : "done");
+      const thumb = j.done
+        ? `<img src="/image/${j.id}" alt="" loading="lazy">`
+        : `<span class="qdot ${cls}">${dot}</span>`;
+      const label = esc(j.error ? j.error.slice(0, 80) : j.prompt.slice(0, 90));
+      return `<a class="qrow" href="/result/${j.id}">${thumb}` +
+        `<span class="qmeta"><code>${esc(j.id.slice(0, 12))}</code> ` +
+        `<span class="qmode">${esc(j.mode)}</span><span class="qlabel">${label}</span></span></a>`;
+    }).join("");
+  } catch { /* rail stays stale, next tick retries */ }
+}
+refreshRail();
+setInterval(refreshRail, 5000);
+</script>
 <script>
 const MODE_PROMPTS = {{ mode_prompts | tojson }};
 const INFO = {
@@ -212,6 +248,5 @@ enhanceBtn.addEventListener("click", () => {
   src.onerror = () => { enhanceHint.textContent = "Enhance failed: network error."; close(); };
 });
 </script>
-</main>
 </body>
 </html>

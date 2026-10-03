@@ -721,6 +721,23 @@ async def generate(
     return RedirectResponse(url=target, status_code=303)
 
 
+@app.get("/queue.json")
+def queue_json():
+    """Lightweight feed for the live rail: newest first, capped."""
+    items = sorted(JOBS.items(), key=lambda kv: kv[1]["created"], reverse=True)[:20]
+    for cid, _ in items:
+        _poll_modal(cid)
+    return {"jobs": [
+        {"id": cid,
+         "status": j["status"],
+         "mode": j.get("mode", "?"),
+         "prompt": (j.get("prompt") or "")[:140],
+         "done": j["status"] == "done" and bool(j.get("png")),
+         "error": j.get("error") or ""}
+        for cid, j in items
+    ]}
+
+
 @app.get("/queue", response_class=HTMLResponse)
 def queue(request: Request, batch: str = ""):
     wanted = [c for c in batch.split(",") if c in JOBS]

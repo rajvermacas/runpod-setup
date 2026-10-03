@@ -191,7 +191,59 @@ details { margin-top: 1.5rem; border-top: 1px solid var(--line); padding-top: 1r
 summary { cursor: pointer; color: var(--dim); }
 details ul { color: var(--dim); }
 
-/* Queue page */
+/* App shell: form column + live queue rail */
+.shell {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 340px;
+  gap: clamp(1rem, 3vw, 2rem);
+  max-width: 76rem;
+  margin: 0 auto;
+  padding: clamp(1rem, 4vw, 2.5rem);
+  align-items: start;
+}
+.shell .card { margin: 0; max-width: none; }
+
+.rail {
+  position: sticky;
+  top: clamp(1rem, 4vw, 2.5rem);
+  max-height: calc(100vh - 2 * clamp(1rem, 4vw, 2.5rem));
+  overflow-y: auto;
+  background: var(--tray);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 1.1rem 1.1rem 0.6rem;
+}
+.rail-head { display: flex; align-items: baseline; gap: 0.6rem; border-bottom: 1px solid var(--line); padding-bottom: 0.6rem; }
+.rail-head h2 {
+  font-family: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif;
+  font-size: 1.25rem; font-weight: 600; margin: 0;
+}
+.qcount { color: var(--dim); font-size: 0.82rem; }
+.rail-list { display: flex; flex-direction: column; }
+.qrow {
+  display: flex; gap: 0.7rem; align-items: center;
+  padding: 0.7rem 0; border-bottom: 1px solid var(--line);
+  text-decoration: none; color: inherit;
+}
+.qrow:last-child { border-bottom: 0; }
+.qrow img { width: 64px; flex: none; border: 1px solid var(--line); border-radius: 2px; }
+.qdot { width: 64px; flex: none; text-align: center; font-size: 1.1rem; }
+.qdot.run { color: var(--safe); animation: pulse 1.6s ease-in-out infinite; }
+.qdot.err { color: var(--safe); }
+.qdot.done { color: var(--dim); }
+@keyframes pulse { 50% { opacity: 0.35; } }
+.qrow .qmeta { min-width: 0; font-size: 0.85rem; }
+.qrow .qmode { color: var(--dim); }
+.qrow p, .qrow .qlabel { margin: 0.15rem 0 0; color: var(--dim); font-size: 0.82rem; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+
+@media (max-width: 1023px) {
+  .shell { grid-template-columns: minmax(0, 1fr); }
+  .rail { position: static; max-height: none; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .qdot.run { animation: none; }
+}
 .topnav { text-align: right; margin: 0 0 0.5rem; font-size: 0.9rem; }
 .queue { display: flex; flex-direction: column; gap: 0.9rem; }
 .qitem { display: flex; gap: 0.9rem; border-top: 1px solid var(--line); padding-top: 0.9rem; }
