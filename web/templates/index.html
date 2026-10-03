@@ -20,6 +20,16 @@
       <option value="turbo" {% if mode == "turbo" %}selected{% endif %}>Turbo — Z-Image-Turbo, 8 steps</option>
     </select>
 
+    <div id="preset-block">
+      <label for="preset">Preset <span class="opt">(optional composition)</span></label>
+      <select id="preset" name="preset">
+        <option value="">No preset</option>
+        {% for key in presets %}
+        <option value="{{ key }}" {% if preset == key %}selected{% endif %}>{{ key }}{% if presets[key] %} — {{ presets[key][:50] }}{% endif %}</option>
+        {% endfor %}
+      </select>
+    </div>
+
     <div id="char-block">
       <label for="character">Character <span class="opt">(optional — saved angles auto-attach + identity injected; in Head-swap angle-1 becomes the head)</span></label>
       <select id="character" name="character">
@@ -174,6 +184,7 @@ function applyMode(setDefaults) {
   document.getElementById("refs-block").style.display = info.showRefs ? "" : "none";
   document.getElementById("neg-block").style.display = info.showNeg ? "" : "none";
   document.getElementById("char-block").style.display = info.showChar ? "" : "none";
+  document.getElementById("preset-block").style.display = (m === "generate" || m === "turbo") ? "" : "none";
   document.getElementById("enhance-btn").style.display = (m === "generate" || m === "turbo") ? "" : "none";
   document.getElementById("eg-btn").style.display = (m === "generate" || m === "turbo") ? "" : "none";
   promptEl.required = info.promptRequired;

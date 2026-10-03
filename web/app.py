@@ -79,6 +79,13 @@ MODAL_CLIP = "qwen3vl_8b_w4a8.safetensors"
 MOCK_MODAL = os.environ.get("MOCK_MODAL", "") == "1"
 
 MODES = ("generate", "edit", "headswap", "turbo")
+
+# Optional composition presets: appended to the prompt. Add more here —
+# key = form value, value = fragment. Keep fragments pose/composition-only.
+PRESETS = {
+    "full-body": "full body shot, head to feet fully visible, standing pose",
+    "sitting": "seated position, sitting naturally, three-quarter view",
+}
 # Form default; BFS_HEADSWAP=1 keeps the earlier single-purpose toggle working
 # by preselecting headswap.
 DEFAULT_MODE = os.environ.get("DEFAULT_MODE", "headswap" if os.environ.get("BFS_HEADSWAP", "") == "1" else "generate")
@@ -448,6 +455,7 @@ def index(request: Request, mode: str = "", char_error: str = ""):
         {"mode": mode, "modes": MODES, "mode_prompts": MODE_DEFAULT_PROMPTS,
          "default_prompt": MODE_DEFAULT_PROMPTS[mode],
          "characters": list_characters(), "character": "",
+         "presets": PRESETS, "preset": "",
          "error": char_error or None},
     )
 
@@ -635,6 +643,7 @@ async def generate(
     batch: int = Form(1),
     gpu: str = Form("T4"),
     scaledown: int = Form(2),
+    preset: str = Form(""),
 ):
     def _form_ctx(error: str, status: int):
         return templates.TemplateResponse(
@@ -642,7 +651,8 @@ async def generate(
             {"error": error, "mode": mode if mode in MODES else DEFAULT_MODE,
              "modes": MODES, "mode_prompts": MODE_DEFAULT_PROMPTS,
              "default_prompt": prompt or MODE_DEFAULT_PROMPTS.get(mode, ""),
-             "characters": list_characters(), "character": character},
+             "characters": list_characters(), "character": character,
+             "presets": PRESETS, "preset": preset},
             status_code=status,
         )
 
@@ -739,6 +749,11 @@ async def generate(
                  client, ratio or "?", mode)
 
     batch = max(1, min(batch, 8))
+    preset = (preset or "").strip()
+    if preset and preset not in PRESETS:
+        return _form_ctx("Unknown preset.", 400)
+    if preset and mode in ("generate", "turbo"):
+        prompt = f"{prompt.strip()}, {PRESETS[preset]}"
     gpu = (gpu or "T4").upper()
     if gpu not in ("T4", "L4"):
         return _form_ctx("GPU must be T4 or L4.", 400)
