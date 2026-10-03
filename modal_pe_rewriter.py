@@ -94,15 +94,31 @@ class PERewrite:
         print("PE-T2I loaded", flush=True)
 
     @modal.method()
-    def rewrite(self, prompt: str, max_tokens: int = 4096) -> dict:
-        """Brief request -> {"rewritten_prompt": str, "wh_ratio": str}."""
+    def rewrite(self, prompt: str, max_tokens: int = 2048) -> dict:
+        """Brief request -> {"rewritten_prompt": str, "wh_ratio": str}.
+
+        Thinking mode OFF: the <think> reasoning block is thousands of
+        tokens of latency we never show. With thinking disabled the model
+        emits just the JSON answer (verified: partition("</think>") below
+        handles both shapes).
+        """
+        import time
         import torch
 
+        t0 = time.time()
         messages = [{"role": "user", "content": [{"type": "text", "text": prompt.strip()}]}]
-        inputs = self.processor.apply_chat_template(
-            messages, add_generation_prompt=True, tokenize=True,
-            return_dict=True, return_tensors="pt",
-        ).to(self.model.device)
+        try:
+            inputs = self.processor.apply_chat_template(
+                messages, add_generation_prompt=True, tokenize=True,
+                return_dict=True, return_tensors="pt", enable_thinking=False,
+            )
+        except TypeError:
+            print("enable_thinking unsupported, falling back to thinking mode", flush=True)
+            inputs = self.processor.apply_chat_template(
+                messages, add_generation_prompt=True, tokenize=True,
+                return_dict=True, return_tensors="pt",
+            )
+        inputs = inputs.to(self.model.device)
         with torch.inference_mode():
             out = self.model.generate(
                 **inputs, max_new_tokens=max_tokens,
@@ -118,13 +134,15 @@ class PERewrite:
         if not isinstance(result, dict) or "rewritten_prompt" not in result:
             raise RuntimeError(f"PE-T2I returned unparseable output: {gen[:300]!r}")
         result.setdefault("wh_ratio", "")
+        print(f"rewrite took {time.time()-t0:.1f}s, "
+              f"{len(out[0])-inputs['input_ids'].shape[-1]} new tokens", flush=True)
         return {"rewritten_prompt": str(result["rewritten_prompt"]),
                 "wh_ratio": str(result.get("wh_ratio", ""))}
 
 
 @app.local_entrypoint()
 def main(prompt: str = "astronaut cat riding a horse in the rain",
-         max_tokens: int = 4096):
+         max_tokens: int = 2048):
     if not prompt.strip():
         raise ValueError("--prompt is required")
     out: dict = PERewrite().rewrite.remote(prompt, max_tokens)
