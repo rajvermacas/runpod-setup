@@ -290,6 +290,7 @@
       <div class="check-row">
         <label class="check"><input type="checkbox" id="swap-clothes" name="swap_clothes" value="1" checked> Clothes</label>
         <label class="check"><input type="checkbox" id="swap-pose" name="swap_pose" value="1"> Pose</label>
+        <label class="check"><input type="checkbox" id="swap-face" name="swap_face" value="1"> Face</label>
       </div>
       <label for="swap-prompt">Prompt</label>
       <textarea id="swap-prompt" name="prompt" rows="4">{{ swap_prompt }}</textarea>
@@ -541,7 +542,7 @@ enhanceBtn.addEventListener("click", () => {
 </script>
 <script>
 // i2i tools: previews, dynamic swap prompt, inline result polling.
-const SWAP_PROMPTS = {{ swap_prompts | tojson }};
+const SWAP_PROMPTS = Object.assign({}, {{ swap_prompts | tojson }}, {face: {{ headswap_default_prompt | tojson }}});
 
 function escHtml(s) {
   return (s || "").replace(/[&<>"']/g, c =>
@@ -565,30 +566,39 @@ bindPreview("swap-ref", "swap-ref-preview");
 bindPreview("fs-body", "fs-body-preview");
 bindPreview("fs-head", "fs-head-preview");
 
-// Swap: Clothes/Pose behave like radios — exactly one selected (JS-enforced),
-// never zero; the prompt auto-rewrites to that single choice unless the user
-// typed their own text.
+// Swap: Clothes/Pose/Face behave like radios — exactly one selected
+// (JS-enforced), never zero; the prompt auto-rewrites to that single choice
+// unless the user typed their own text.
 (function () {
-  const clothes = document.getElementById("swap-clothes");
-  const pose = document.getElementById("swap-pose");
+  const boxes = ["swap-clothes", "swap-pose", "swap-face"]
+    .map((id) => document.getElementById(id));
+  const [clothes, pose, face] = boxes;
   const prompt = document.getElementById("swap-prompt");
-  if (!clothes || !pose || !prompt) return;
+  if (boxes.some((b) => !b) || !prompt) return;
+  const form = document.getElementById("i2i-swap-form");
+  const mode = form && form.querySelector('input[name="mode"]');
+  const baseOpt = form && form.querySelector('label[for="swap-base"] .opt');
+  const refOpt = form && form.querySelector('label[for="swap-ref"] .opt');
+  const hint = document.getElementById("swap-hint");
   let swapAuto = SWAP_PROMPTS.clothes;
   const sync = (changed) => {
     // Exactly one selected: switching wins, unchecking the active one is undone.
-    if (clothes.checked && pose.checked) {
-      if (changed === pose) clothes.checked = false; else pose.checked = false;
-    } else if (!clothes.checked && !pose.checked) {
-      (changed === pose ? pose : clothes).checked = true;
-    }
-    const next = clothes.checked ? SWAP_PROMPTS.clothes : SWAP_PROMPTS.pose;
+    if (!changed.checked) changed.checked = true;
+    boxes.forEach((b) => { if (b !== changed) b.checked = false; });
+    const next = changed === face ? SWAP_PROMPTS.face
+               : changed === pose ? SWAP_PROMPTS.pose
+               : SWAP_PROMPTS.clothes;
     const cur = prompt.value;
     if (!cur.trim() || cur === swapAuto) prompt.value = next;
     swapAuto = next;
+    const isFace = changed === face;
+    if (mode) mode.value = isFace ? "headswap" : "edit";
+    if (baseOpt) baseOpt.textContent = isFace ? "(body and scene to keep)" : "(the person to modify)";
+    if (refOpt) refOpt.textContent = isFace ? "(the face/head to swap in)" : "(source of the clothes / pose)";
+    if (hint) hint.textContent = isFace ? "Face swap uses the BFS head-swap LoRA — body first, head second." : "";
   };
-  clothes.addEventListener("change", () => sync(clothes));
-  pose.addEventListener("change", () => sync(pose));
-  sync();
+  boxes.forEach((b) => b.addEventListener("change", () => sync(b)));
+  sync(boxes.find((b) => b.checked) || clothes);
 })();
 
 // Face swap: a chosen character slot supplies the head, so the head upload
