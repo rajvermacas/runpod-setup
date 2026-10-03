@@ -80,10 +80,10 @@ MOCK_MODAL = os.environ.get("MOCK_MODAL", "") == "1"
 
 MODES = ("generate", "edit", "headswap", "turbo")
 
-# UI sections: the Create form (generate/turbo) and the i2i tools (edit/swap/face-swap).
+# UI sections: the Create form (generate/turbo) and the i2i tools (edit/swap).
 # mode=edit/headswap is still accepted by the backend for form posts.
 SECTIONS = ("create", "i2i")
-I2I_TOOLS = ("edit", "swap", "face-swap")
+I2I_TOOLS = ("edit", "swap")
 
 # Optional composition presets: appended to the prompt. Add more here —
 # key = form value, value = fragment. Keep fragments pose/composition-only.
@@ -214,8 +214,6 @@ def _default_prompt(section: str, tool: str, mode: str) -> str:
     if section == "i2i":
         if tool == "swap":
             return SWAP_DEFAULT_PROMPTS["clothes"]
-        if tool == "face-swap":
-            return HEADSWAP_DEFAULT_PROMPT
         return MODE_DEFAULT_PROMPTS["edit"]
     return MODE_DEFAULT_PROMPTS.get(mode, "")
 
@@ -566,7 +564,7 @@ def index(request: Request, mode: str = "", char_error: str = "",
     if mode not in ("generate", "turbo"):
         mode = DEFAULT_MODE if DEFAULT_MODE in ("generate", "turbo") else "generate"
     section = section if section in SECTIONS else "create"
-    tool = tool if tool in I2I_TOOLS else "edit"
+    tool = tool if tool in I2I_TOOLS else "swap"
     return templates.TemplateResponse(
         request, "index.html",
         {"mode": mode, "modes": MODES, "mode_prompts": MODE_DEFAULT_PROMPTS,
@@ -781,7 +779,7 @@ async def generate(
 ):
     # Keep the active section/tool through a validation-error re-render.
     section = section if section in SECTIONS else "create"
-    tool = tool if tool in I2I_TOOLS else "edit"
+    tool = tool if tool in I2I_TOOLS else "swap"
 
     def _form_ctx(error: str, status: int):
         return templates.TemplateResponse(

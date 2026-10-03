@@ -245,12 +245,10 @@
   <nav class="subnav" aria-label="i2i tools">
     <a href="/?section=i2i&amp;tool=edit" class="{% if tool == 'edit' %}on{% endif %}">Edit</a>
     <a href="/?section=i2i&amp;tool=swap" class="{% if tool == 'swap' %}on{% endif %}">Swap</a>
-    <a href="/?section=i2i&amp;tool=face-swap" class="{% if tool == 'face-swap' %}on{% endif %}">Face Swap</a>
   </nav>
 
   {% set edit_prompt = default_prompt if (section == "i2i" and tool == "edit") else mode_prompts["edit"] %}
   {% set swap_prompt = default_prompt if (section == "i2i" and tool == "swap") else swap_prompts["clothes"] %}
-  {% set faceswap_prompt = default_prompt if (section == "i2i" and tool == "face-swap") else headswap_default_prompt %}
 
   <div class="tool" id="tool-edit"{% if tool != "edit" %} hidden{% endif %}>
     <h2 class="tool-title">Edit — prompt-driven image edit</h2>
@@ -300,37 +298,6 @@
     </form>
   </div>
 
-  <div class="tool" id="tool-face-swap"{% if tool != "face-swap" %} hidden{% endif %}>
-    <h2 class="tool-title">Face Swap — body + head</h2>
-    <form class="tool-form" id="i2i-faceswap-form" action="/generate" method="post" enctype="multipart/form-data">
-      <input type="hidden" name="mode" value="headswap">
-      <input type="hidden" name="section" value="i2i">
-      <input type="hidden" name="tool" value="face-swap">
-      <div class="upload-grid">
-        <div class="upcard">
-          <label for="fs-body">Body image <span class="opt">(required — the body/scene to keep)</span></label>
-          <input id="fs-body" name="ref_images" type="file" accept="image/*" required>
-          <img class="up-preview" id="fs-body-preview" alt="body preview" hidden>
-        </div>
-        <div class="upcard">
-          <label for="fs-head">Head image <span class="opt">(optional if a character slot is chosen)</span></label>
-          <input id="fs-head" name="ref_images" type="file" accept="image/*">
-          <img class="up-preview" id="fs-head-preview" alt="head preview" hidden>
-        </div>
-      </div>
-      <label for="fs-char">Character <span class="opt">(optional — its first portrait becomes the head when no head image is uploaded)</span></label>
-      <select id="fs-char" name="character">
-        <option value="">No character — use the uploaded head image</option>
-        {% for c in characters %}
-        <option value="{{ c.name }}" {% if character == c.name %}selected{% endif %}>{{ c.name }} ({{ c.angles }} angle{{ "s" if c.angles > 1 else "" }}){% if c.identity %} — {{ c.identity[:60] }}{% endif %}</option>
-        {% endfor %}
-      </select>
-      <label for="fs-prompt">Prompt</label>
-      <textarea id="fs-prompt" name="prompt" rows="4">{{ faceswap_prompt }}</textarea>
-      <div class="btn-row"><button type="submit">Generate</button></div>
-      <div class="i2i-result" id="i2i-fs-result" hidden></div>
-    </form>
-  </div>
   </section>
 </main>
 <aside class="rail" aria-label="Task queue">
@@ -563,8 +530,6 @@ function bindPreview(inputId, imgId) {
 }
 bindPreview("swap-base", "swap-base-preview");
 bindPreview("swap-ref", "swap-ref-preview");
-bindPreview("fs-body", "fs-body-preview");
-bindPreview("fs-head", "fs-head-preview");
 
 // Swap: Clothes/Pose/Face behave like radios — exactly one selected
 // (JS-enforced), never zero; the prompt auto-rewrites to that single choice
@@ -599,17 +564,6 @@ bindPreview("fs-head", "fs-head-preview");
   };
   boxes.forEach((b) => b.addEventListener("change", () => sync(b)));
   sync(boxes.find((b) => b.checked) || clothes);
-})();
-
-// Face swap: a chosen character slot supplies the head, so the head upload
-// is only required when no slot is picked.
-(function () {
-  const sel = document.getElementById("fs-char");
-  const head = document.getElementById("fs-head");
-  if (!sel || !head) return;
-  const sync = () => { head.required = !sel.value; };
-  sel.addEventListener("change", sync);
-  sync();
 })();
 
 // Inline dispatch: POST /generate asking for JSON, then poll /queue.json
@@ -681,7 +635,6 @@ function initInlineResult(formId, panelId) {
 }
 initInlineResult("i2i-edit-form", "i2i-edit-result");
 initInlineResult("i2i-swap-form", "i2i-swap-result");
-initInlineResult("i2i-faceswap-form", "i2i-fs-result");
 attachZoom();
 </script>
 </body>
