@@ -234,7 +234,8 @@ def _mock_png(prompt: str, width: int = 512, height: int = 512) -> bytes:
 
 def _spawn_modal(prompt: str, negative: str, width: int, height: int,
                  seed: int, steps: int, refs: list[bytes], mode: str,
-                 char_image: bytes | None = None, identity: str = "") -> str:
+                 char_image: bytes | None = None, identity: str = "",
+                 gpu: str = "T4", scaledown: int = 2) -> str:
     """Spawn a Modal job, return the FunctionCall id.
 
     char_image/identity come from a saved character slot: the portrait is
@@ -244,6 +245,10 @@ def _spawn_modal(prompt: str, negative: str, width: int, height: int,
     """
     t0 = time.time()
     refs = list(refs)
+    gpu = (gpu or "T4").upper()
+    if gpu not in ("T4", "L4"):
+        raise ValueError("gpu must be T4 or L4")
+    scaledown = max(2, min(int(scaledown or 2), 600))
     if identity:
         prompt = f"{prompt.strip()}\nSame identity: {identity.strip()}"
     if mode == "headswap" and char_image is not None:
@@ -267,11 +272,15 @@ def _spawn_modal(prompt: str, negative: str, width: int, height: int,
         return call_id
     import modal
 
+    def _cls(app: str, cls_name: str):
+        # Per-job GPU + idle window without redeploying anything.
+        return modal.Cls.from_name(app, cls_name).with_options(
+            gpu=gpu, scaledown_window=scaledown)()
+
     if mode == "turbo":
         if refs:
             raise ValueError("turbo is text-to-image only — remove reference images or switch to Edit")
-        cls = modal.Cls.from_name(TURBO_MODAL_APP_NAME, TURBO_MODAL_CLS_NAME)
-        inst = cls()
+        inst = _cls(TURBO_MODAL_APP_NAME, TURBO_MODAL_CLS_NAME)
         t = TURBO_DEFAULTS
         call = inst.generate.spawn(
             prompt, width, height, seed, steps,
@@ -280,8 +289,7 @@ def _spawn_modal(prompt: str, negative: str, width: int, height: int,
     elif mode == "headswap":
         if len(refs) < 2:
             raise ValueError("head-swap needs 2 images: body/target first, reference head second")
-        cls = modal.Cls.from_name(BFS_MODAL_APP_NAME, BFS_MODAL_CLS_NAME)
-        inst = cls()
+        inst = _cls(BFS_MODAL_APP_NAME, BFS_MODAL_CLS_NAME)
         call = inst.generate.spawn(
             refs[0], refs[1], prompt or HEADSWAP_DEFAULT_PROMPT, negative,
             width, height, False, seed, steps,
@@ -289,8 +297,7 @@ def _spawn_modal(prompt: str, negative: str, width: int, height: int,
             "bfs_head_v1.1_qwen_2.1.safetensors", 1.0, False, MODAL_CLIP,
         )
     else:
-        cls = modal.Cls.from_name(MODAL_APP_NAME, MODAL_CLS_NAME)
-        inst = cls()
+        inst = _cls(MODAL_APP_NAME, MODAL_CLS_NAME)
         call = inst.generate.spawn(
             prompt, negative, width, height, seed, steps,
             1.0, "euler", "simple", False, MODAL_CLIP,
@@ -306,8 +313,8 @@ def _spawn_modal(prompt: str, negative: str, width: int, height: int,
         "ref_count": len(refs), "created": time.time(), "mock": False,
         "ref_previews": _previews(refs),
     }
-    log.info("spawn modal call_id=%s mode=%s prompt=%.60r %dx%d steps=%d seed=%d refs=%d (%.2fs)",
-             call_id, mode, prompt, width, height, steps, seed, len(refs), time.time() - t0)
+    log.info("spawn modal call_id=%s mode=%s gpu=%s scale=%ss prompt=%.60r %dx%d steps=%d seed=%d refs=%d (%.2fs)",
+             call_id, mode, gpu, scaledown, prompt, width, height, steps, seed, len(refs), time.time() - t0)
     return call_id
 
 
@@ -585,6 +592,8 @@ async def generate(
     steps: int = Form(25),
     seed: int = Form(0),
     batch: int = Form(1),
+    gpu: str = Form("T4"),
+    scaledown: int = Form(2),
 ):
     def _form_ctx(error: str, status: int):
         return templates.TemplateResponse(
@@ -689,6 +698,13 @@ async def generate(
                  client, ratio or "?", mode)
 
     batch = max(1, min(batch, 8))
+    gpu = (gpu or "T4").upper()
+    if gpu not in ("T4", "L4"):
+        return _form_ctx("GPU must be T4 or L4.", 400)
+    try:
+        scaledown = max(2, min(int(scaledown), 600))
+    except (TypeError, ValueError):
+        return _form_ctx("Scaledown must be 2–600 seconds.", 400)
 
     try:
         # Batch = N Modal calls spawned back-to-back. With max_containers=1
@@ -700,7 +716,7 @@ async def generate(
             # blocking Modal network call -> threadpool, taaki event loop block na ho
             call_ids.append(await run_in_threadpool(
                 _spawn_modal, prompt, negative_prompt.strip(), width, height, s, steps,
-                refs, mode, char_image, identity,
+                refs, mode, char_image, identity, gpu, scaledown,
             ))
         call_id = call_ids[0]
     except Exception as e:
