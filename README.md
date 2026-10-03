@@ -252,6 +252,59 @@ modal run modal_zimage_turbo_direct.py --prompt "..." --scaledown-window 300 --o
 
 GPU override: `MODAL_GPU=L4 modal run modal_zimage_turbo_direct.py ...`
 
+## BFS head-swap on Qwen-Image 2.1 (direct nodes)
+
+Branch `bfs-headswap-modal`, entry point `modal_bfs_headswap_direct.py` — same direct-`NODE_CLASS_MAPPINGS` pattern as the Qwen script, but for the [BFS head-swap LoRA](https://huggingface.co/Alissonerdx/BFS-Best-Face-Swap) ([Qwen 2.1 guide](https://huggingface.co/Alissonerdx/BFS-Best-Face-Swap/blob/main/docs/qwen-image-2.1.md)). Runs on the **same 4-bit base weights** (shared Modal Volume `qwen21-comfy-cache`, no re-download) with a `LoraLoaderModelOnly` step applied after `UNETLoader`.
+
+Input order matters: `--body-image` → `<image1>` (target: body, pose, background), `--head-image` → `<image2>` (reference head: identity, hair, eyes, nose). Keep this order — reversing the images changes who is the target. Do not use with public figures or people who haven't consented (model terms).
+
+LoRA weights, auto-downloaded at image build into `ComfyUI/models/loras/`:
+
+| File | Notes |
+|---|---|
+| `bfs_head_v1.1_qwen_2.1.safetensors` | default, recommended |
+| `bfs_head_v1.1_alternative_qwen_2.1.safetensors` | stronger expression copy, slightly larger pose error |
+| `bfs_head_v1_qwen_2.1.safetensors` | original release (softest skin) |
+| `p_qwen_image_2.1_8step_v0.1.safetensors` | optional Pruna accel LoRA from the BFS reference workflow (not part of BFS) |
+
+### Execution commands
+
+```bash
+# basic swap (L4 default, v1.1 LoRA @ 1.0, 25 steps / CFG 1 / euler + simple)
+# verified 2026-10-03 on L4: ~53 s inference, output follows the body image size
+modal run modal_bfs_headswap_direct.py --body-image woman.png --head-image man.png --out headswap_out.png
+
+# alternative LoRA (stronger expression transfer)
+modal run modal_bfs_headswap_direct.py --body-image woman.png --head-image man.png \
+  --bfs-lora bfs_head_v1.1_alternative_qwen_2.1.safetensors --out headswap_alt.png
+
+# 8-step accel path (Pruna LoRA + fewer steps)
+modal run modal_bfs_headswap_direct.py --body-image woman.png --head-image man.png \
+  --use-accel-lora --steps 8 --out headswap_fast.png
+
+# explicit canvas instead of body-image size (workflow ResolutionSelector path)
+modal run modal_bfs_headswap_direct.py --body-image woman.png --head-image man.png \
+  --custom-size --width 1024 --height 1024 --seed 0 --out headswap_custom.png
+```
+
+| Flag | Default | Notes |
+|---|---|---|
+| `--body-image` / `--head-image` | required | local paths → `<image1>` target / `<image2>` reference head |
+| `--prompt` | head_swap template | BFS guide prompt; keep the `<image1>`/`<image2>` tokens |
+| `--negative` | `""` | relevant when CFG > 1 |
+| `--custom-size` | off | off = canvas follows the body image; on = `--width`×`--height` canvas |
+| `--width/--height` | 1024/1024 | custom-size canvas, or resolution budget (`max(w,h)`) otherwise |
+| `--steps` | 0 (= auto) | 8 with `--use-accel-lora`, else 25 |
+| `--cfg` / `--sampler` / `--scheduler` | 1.0 / `euler` / `simple` | official Qwen-Image 2.1 path |
+| `--bfs-lora` | v1.1 | one of the three BFS Qwen-2.1 head weights above |
+| `--lora-strength` | 1.0 | guide says start at 1.0 |
+| `--use-accel-lora` | off | adds the Pruna 8-step LoRA (pair with `--steps 8`) |
+| `--seed` | 42 | `0` = random seed |
+| `--scaledown-window` | 2 | idle seconds before scale-down |
+| `--out` | `bfs_headswap_out.png` | local output path |
+
+GPU default is L4 (`MODAL_GPU` override, same as the Qwen script). The BFS reference workflow's `deis_2m` sampler needs the res4lyf custom-node pack, so the script defaults to `euler`/`simple` to stay dependency-identical to `modal_qwen21_direct.py`.
+
 ## Generic workflow runner (any workflow JSON)
 
 `modal_workflow_direct.py` — runs any ComfyUI workflow file on a Modal GPU
@@ -275,6 +328,7 @@ modal run modal_workflow_direct.py --workflow qwen21_workflow_api.json --prompt 
 |---|---|
 | `modal_qwen21_direct.py` | **main entry** — direct ComfyUI nodes (`NODE_CLASS_MAPPINGS` + `torch.inference_mode()`), no server |
 | `modal_zimage_turbo_direct.py` | Z-Image-Turbo entry (branch `zimage-turbo-t4-direct`) — same direct pattern, T4 default, 8-step Turbo sampling |
+| `modal_bfs_headswap_direct.py` | BFS head-swap entry (branch `bfs-headswap-modal`) — same direct pattern, Qwen-Image 2.1 4-bit base + BFS head LoRA (`--body-image` → `<image1>`, `--head-image` → `<image2>`) |
 | `modal_workflow_direct.py` | generic runner: `--workflow file.json --prompt "..."` executes any API/UI-format workflow on Modal GPU |
 | `modal_qwen21.py` | alternative: runs ComfyUI as an HTTP server on Modal (`/prompt` REST API) |
 | `qwen21_workflow_api.json` | API-format workflow used by `modal_qwen21.py` |
