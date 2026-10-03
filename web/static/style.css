@@ -126,7 +126,10 @@ input[type="file"]::file-selector-button {
   grid-template-columns: repeat(4, 1fr);
   gap: 0.9rem;
 }
-.grid label { font-size: 0.85rem; }
+.grid > div { display: flex; flex-direction: column; min-width: 0; }
+.grid label { font-size: 0.85rem; min-height: 2.5em; }
+.grid select,
+.grid input { height: 2.75rem; }
 
 /* The bold moment: safelight-red action */
 button,
