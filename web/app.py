@@ -104,6 +104,12 @@ ANGLES = {
     "low-angle": "slight low angle, camera near chest height",
     "high-angle": "slight high angle, natural phone-above view",
     "dutch-tilt": "subtle camera tilt, informal handheld feel",
+    "eye-level": "eye-level shot, camera at the subject's eye height, natural neutral perspective",
+    "wide-shot": "wide shot, subject small within the surrounding environment, full context visible",
+    "medium-shot": "medium shot, framed from the waist up, facial expression with body language",
+    "close-up": "close-up, tight framing on the face and shoulders, emotional detail",
+    "pov": "point of view shot, scene seen directly through the subject's eyes, hands possibly visible in frame",
+    "birds-eye": "bird's-eye view, overhead shot looking straight down from high above",
 }
 
 # Everyday scenes: daily-lifestyle backgrounds (third dropdown, stacks with
