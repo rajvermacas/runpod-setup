@@ -9,20 +9,22 @@ Flow (async, avoids HTTP timeouts on 1-3 min GPU jobs):
   GET  /image/{call_id} -> final PNG bytes
 
 Backend -> Modal uses `modal.Cls.from_name(...)` with `.spawn()` /
-`FunctionCall.from_id().get(timeout=0)` against two deployed apps:
+`FunctionCall.from_id().get(timeout=0)` against three deployed apps:
 
   generate / edit -> `Qwen21Direct` on `qwen21-4bit-direct`
   headswap       -> `BFSHeadSwapDirect` on `bfs-headswap-direct`
+  turbo          -> `ZImageTurboDirect` on `zimage-turbo-direct` (text-to-image only)
 
-(Deploy once each: `modal deploy modal_qwen21_direct.py` and
-`modal deploy modal_bfs_headswap_direct.py` — `Cls.from_name` needs a
-deployed app. Overrides: MODAL_APP_NAME / MODAL_CLS_NAME for the Qwen
-path, BFS_MODAL_APP_NAME / BFS_MODAL_CLS_NAME for the head-swap path.)
+(Deploy once each — `Cls.from_name` needs a deployed app. Overrides:
+MODAL_APP_NAME / MODAL_CLS_NAME for the Qwen path,
+BFS_MODAL_APP_NAME / BFS_MODAL_CLS_NAME for the head-swap path,
+TURBO_MODAL_APP_NAME / TURBO_MODAL_CLS_NAME for the Turbo path.)
 
-Modes (radio on the form, `mode` form field):
-  generate: text-to-image, no references needed.
+Modes (dropdown on the form, `mode` form field):
+  generate: text-to-image (Qwen-Image 2.1 4-bit), no references needed.
   edit:     Qwen edit with reference photos (up to 4, output follows the first).
   headswap: BFS LoRA — exactly 2 images, body/target first, reference head second.
+  turbo:    Z-Image-Turbo, 8-step text-to-image (no refs, negative ignored).
 
 Run:
   pip install -r web/requirements.txt
@@ -60,10 +62,16 @@ MODAL_APP_NAME = os.environ.get("MODAL_APP_NAME", "qwen21-4bit-direct")
 MODAL_CLS_NAME = os.environ.get("MODAL_CLS_NAME", "Qwen21Direct")
 BFS_MODAL_APP_NAME = os.environ.get("BFS_MODAL_APP_NAME", "bfs-headswap-direct")
 BFS_MODAL_CLS_NAME = os.environ.get("BFS_MODAL_CLS_NAME", "BFSHeadSwapDirect")
+TURBO_MODAL_APP_NAME = os.environ.get("TURBO_MODAL_APP_NAME", "zimage-turbo-direct")
+TURBO_MODAL_CLS_NAME = os.environ.get("TURBO_MODAL_CLS_NAME", "ZImageTurboDirect")
+# Official Z-Image-Turbo int8 template defaults (see modal_zimage_turbo_direct.py).
+TURBO_DEFAULTS = dict(steps=8, cfg=1.0, sampler="res_multistep", scheduler="simple",
+                      shift=3.0, unet="z_image_turbo_int8_convrot.safetensors",
+                      clip="qwen_3_4b_fp8_mixed.safetensors")
 MODAL_CLIP = "qwen3vl_8b_w4a8.safetensors"
 MOCK_MODAL = os.environ.get("MOCK_MODAL", "") == "1"
 
-MODES = ("generate", "edit", "headswap")
+MODES = ("generate", "edit", "headswap", "turbo")
 # Form default; BFS_HEADSWAP=1 keeps the earlier single-purpose toggle working
 # by preselecting headswap.
 DEFAULT_MODE = os.environ.get("DEFAULT_MODE", "headswap" if os.environ.get("BFS_HEADSWAP", "") == "1" else "generate")
@@ -89,8 +97,9 @@ app.mount("/static", StaticFiles(directory=str(BASE_DIR / "static")), name="stat
 templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
 
 log.info(
-    "startup modal_app=%s cls=%s bfs_app=%s bfs_cls=%s mock=%s default_mode=%s max_refs=%d max_file_mb=%d",
+    "startup modal_app=%s cls=%s bfs_app=%s bfs_cls=%s turbo_app=%s turbo_cls=%s mock=%s default_mode=%s max_refs=%d max_file_mb=%d",
     MODAL_APP_NAME, MODAL_CLS_NAME, BFS_MODAL_APP_NAME, BFS_MODAL_CLS_NAME,
+    TURBO_MODAL_APP_NAME, TURBO_MODAL_CLS_NAME,
     MOCK_MODAL, DEFAULT_MODE, MAX_REFS, MAX_FILE_MB,
 )
 
@@ -134,7 +143,17 @@ def _spawn_modal(prompt: str, negative: str, width: int, height: int,
         return call_id
     import modal
 
-    if mode == "headswap":
+    if mode == "turbo":
+        if refs:
+            raise ValueError("turbo is text-to-image only — remove reference images or switch to Edit")
+        cls = modal.Cls.from_name(TURBO_MODAL_APP_NAME, TURBO_MODAL_CLS_NAME)
+        inst = cls()
+        t = TURBO_DEFAULTS
+        call = inst.generate.spawn(
+            prompt, width, height, seed, steps,
+            t["cfg"], t["sampler"], t["scheduler"], t["shift"], t["unet"], t["clip"],
+        )
+    elif mode == "headswap":
         if len(refs) < 2:
             raise ValueError("head-swap needs 2 images: body/target first, reference head second")
         cls = modal.Cls.from_name(BFS_MODAL_APP_NAME, BFS_MODAL_CLS_NAME)
@@ -241,7 +260,8 @@ def index(request: Request, mode: str = ""):
 @app.get("/health")
 def health():
     return {"status": "ok", "modal_app": MODAL_APP_NAME,
-            "bfs_modal_app": BFS_MODAL_APP_NAME, "mock": MOCK_MODAL,
+            "bfs_modal_app": BFS_MODAL_APP_NAME,
+            "turbo_modal_app": TURBO_MODAL_APP_NAME, "mock": MOCK_MODAL,
             "modes": list(MODES), "default_mode": DEFAULT_MODE}
 
 
@@ -320,6 +340,11 @@ async def generate(
         ref_names.append(f"{f.filename} ({len(data) // 1024} KB)")
     log.info("POST /generate from %s mode=%s prompt=%.80r %dx%d steps=%d seed=%d refs=[%s]",
              client, mode, prompt, width, height, steps, seed, ", ".join(ref_names) or "none")
+
+    if mode == "turbo" and refs:
+        log.warning("POST /generate from %s rejected: turbo takes no reference images", client)
+        return _form_ctx(
+            "Turbo is text-to-image only — remove reference images or switch to Edit mode.", 400)
 
     if mode == "headswap" and len(refs) < 2:
         log.warning("POST /generate from %s rejected: head-swap needs 2 images, got %d",

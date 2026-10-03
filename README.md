@@ -118,19 +118,21 @@ Notes:
 
 ## Web UI (FastAPI + Jinja, own backend → Modal)
 
-Custom UI in `web/` — mode radio (**Generate** / **Edit** / **Head-swap**) + prompt box + reference-image upload. The backend spawns a Modal GPU job and the result page polls until the PNG is ready:
+Custom UI in `web/` — mode dropdown (**Generate** / **Edit** / **Head-swap** / **Turbo**) + prompt box + reference-image upload. The backend spawns a Modal GPU job and the result page polls until the PNG is ready:
 
 | Mode | Backend (deployed Modal app) | Input |
 |---|---|---|
 | Generate | `Cls.from_name("qwen21-4bit-direct", "Qwen21Direct")` | prompt only |
 | Edit | same Qwen app | prompt + up to 4 refs (output follows the first) |
 | Head-swap | `Cls.from_name("bfs-headswap-direct", "BFSHeadSwapDirect")` | exactly 2 images: body/target first, reference head second |
+| Turbo | `Cls.from_name("zimage-turbo-direct", "ZImageTurboDirect")` | prompt only, 8 steps (refs rejected, negative ignored) |
 
 ### Prerequisites
 
 ```bash
 modal deploy modal_qwen21_direct.py        # one time each — backend lookups need deployed apps
 modal deploy modal_bfs_headswap_direct.py
+modal deploy modal_zimage_turbo_direct.py
 pip install -r web/requirements.txt
 ```
 
@@ -173,7 +175,7 @@ MOCK_MODAL=1 python3 -m uvicorn web.app:app --port 8000
 - Keep L4 (default): cheaper **per image** (~$0.025) than T4 (~$0.038) despite the higher hourly rate.
 - Infra is already minimal: 0 warm containers, `scaledown_window=2s`, `max_containers=1`, `max_inputs=1`, 10-min timeout.
 
-Env overrides: `MODAL_APP_NAME`, `MODAL_CLS_NAME` (Qwen path), `BFS_MODAL_APP_NAME`, `BFS_MODAL_CLS_NAME` (head-swap path), `DEFAULT_MODE` (form preselect: `generate`/`edit`/`headswap`), `MOCK_MODAL=1`.
+Env overrides: `MODAL_APP_NAME`, `MODAL_CLS_NAME` (Qwen path), `BFS_MODAL_APP_NAME`, `BFS_MODAL_CLS_NAME` (head-swap path), `TURBO_MODAL_APP_NAME`, `TURBO_MODAL_CLS_NAME` (Turbo path), `DEFAULT_MODE` (form preselect: `generate`/`edit`/`headswap`/`turbo`), `MOCK_MODAL=1`.
 
 ### Server logs
 
