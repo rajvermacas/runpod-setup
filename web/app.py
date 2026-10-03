@@ -202,9 +202,9 @@ MODE_DEFAULT_PROMPTS = {
 # The template seeds the textarea with "both"; the browser rewrites it live as
 # the checkboxes change (skipping text the user typed themselves).
 SWAP_DEFAULT_PROMPTS = {
-    "both": "dress the person from <image1> in the clothing from <image2>, and change their pose to the pose from <image2>, keep their face unchanged, photorealistic",
-    "clothes": "dress the person from <image1> in the clothing from <image2>, keep their face, pose and background unchanged, photorealistic",
-    "pose": "replace the pose of the person in <image1> with the pose from <image2>, keep their face and clothing unchanged, photorealistic",
+    "both": "Change the outfit of <image1> to the outfit in <image2>, and change the pose of the person in <image1> to the pose from <image2>. Keep the face of <image1> unchanged, photorealistic",
+    "clothes": "Change the outfit of <image1> to the outfit in <image2>. Keep the face and pose of <image1> unchanged, photorealistic",
+    "pose": "Replace the pose of the person in <image1> with the pose from <image2>. Keep the face and clothing of <image1> unchanged, photorealistic",
     "neither": "",
 }
 
