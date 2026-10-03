@@ -109,7 +109,9 @@ class PERewrite:
         import torch
 
         t0 = time.time()
-        messages = [{"role": "user", "content": [{"type": "text", "text": prompt.strip()}]}]
+        nudged = (prompt.strip() + "\n\nThink briefly (a short paragraph), "
+                  "then output only the JSON answer.")
+        messages = [{"role": "user", "content": [{"type": "text", "text": nudged}]}]
         inputs = self.processor.apply_chat_template(
             messages, add_generation_prompt=True, tokenize=True,
             return_dict=True, return_tensors="pt",
