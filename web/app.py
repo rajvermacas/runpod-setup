@@ -650,9 +650,13 @@ async def generate(
                               "ratio": ratio, "mode": f"{mode} (enhanced)"})
     if len(call_ids) > 1:
         log.info("POST /generate from %s -> batch of %d, redirect /queue", client, len(call_ids))
-        return RedirectResponse(url=f"/queue?batch={','.join(call_ids)}", status_code=303)
-    log.info("POST /generate from %s -> redirect /result/%s", client, call_id)
-    return RedirectResponse(url=f"/result/{call_id}", status_code=303)
+        target = f"/queue?batch={','.join(call_ids)}"
+    else:
+        log.info("POST /generate from %s -> redirect /result/%s", client, call_id)
+        target = f"/result/{call_id}"
+    if "application/json" in request.headers.get("accept", ""):
+        return {"queued": call_ids, "url": target}
+    return RedirectResponse(url=target, status_code=303)
 
 
 @app.get("/queue", response_class=HTMLResponse)

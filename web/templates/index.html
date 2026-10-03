@@ -11,7 +11,7 @@
   <p class="topnav"><a href="/queue">Queue →</a></p>
   <h1>Generate on Modal</h1>  <p class="sub" id="mode-sub"></p>
   {% if error %}<p class="error">{{ error }}</p>{% endif %}
-  <form action="/generate" method="post" enctype="multipart/form-data">
+  <form id="gen-form" action="/generate" method="post" enctype="multipart/form-data">
     <label for="mode">Mode</label>
     <select id="mode" name="mode">
       <option value="generate" {% if mode == "generate" %}selected{% endif %}>Generate — Qwen-Image 2.1 text-to-image</option>
@@ -63,6 +63,7 @@
       <button type="submit" name="flow" value="enhance-generate" id="eg-btn"
         title="Rewrite the prompt first, then generate with it">Enhance &amp; Generate</button>
     </div>
+    <p class="hint" id="submit-hint" aria-live="polite"></p>
   </form>
   <details>
     <summary>Save a character slot</summary>
@@ -146,6 +147,42 @@ function applyMode(setDefaults) {
 }
 modeEl.addEventListener("change", () => applyMode(true));
 applyMode(false);
+
+// Async dispatch: submit creates task(s) and stays on this screen.
+// The buttons carry flow=generate|enhance-generate; fetch asks for JSON.
+const genForm = document.getElementById("gen-form");
+const submitHint = document.getElementById("submit-hint");
+let pendingFlow = "generate";
+genForm.querySelectorAll('button[type="submit"]').forEach(btn => {
+  btn.addEventListener("click", () => { pendingFlow = btn.value; });
+});
+genForm.addEventListener("submit", async (ev) => {
+  ev.preventDefault();
+  const data = new FormData(genForm);
+  data.set("flow", pendingFlow);
+  submitHint.innerHTML = "Dispatching…";
+  try {
+    const r = await fetch("/generate", {
+      method: "POST", headers: {"Accept": "application/json"}, body: data,
+    });
+    if (!r.ok) {
+      const txt = await r.text();
+      const m = txt.match(/<p class="error">([\s\S]*?)<\/p>/);
+      submitHint.textContent = "Dispatch failed: " + (m ? m[1].trim() : ("HTTP " + r.status));
+      return;
+    }
+    const st = await r.json();
+    const ids = st.queued || [];
+    const links = ids.map((id, i) =>
+      `<a href="/result/${id}">task ${i + 1}</a>`).join(" · ");
+    submitHint.innerHTML =
+      `Dispatched ${ids.length} task${ids.length > 1 ? "s" : ""}: ${links}` +
+      ` — <a href="${st.url}">open ${ids.length > 1 ? "queue" : "result"}</a>. ` +
+      `This screen stays free; submit more below.`;
+  } catch (e) {
+    submitHint.textContent = "Dispatch failed: network error.";
+  }
+});
 
 // OpenRouter prompt enhancement (Generate/Turbo): rewrite -> fill box.
 const enhanceBtn = document.getElementById("enhance-btn");
