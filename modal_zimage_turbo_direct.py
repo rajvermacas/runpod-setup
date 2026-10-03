@@ -240,7 +240,7 @@ def main(
     sampler: str = "res_multistep",
     scheduler: str = "simple",
     shift: float = 3.0,
-    seed: int = 42,
+    seed: int = 0,
     unet_name: str = UNET_INT8,
     clip_name: str = CLIP_FP8,
     scaledown_window: int = DEFAULT_SCALEDOWN_WINDOW,  # idle seconds before scale-down

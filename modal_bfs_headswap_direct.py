@@ -324,7 +324,7 @@ def main(
     cfg: float = 1.0,
     sampler: str = "euler",
     scheduler: str = "simple",
-    seed: int = 42,
+    seed: int = 0,
     bfs_lora: str = BFS_LORA_DEFAULT,  # one of the three BFS Qwen-2.1 head weights
     lora_strength: float = 1.0,  # BFS guide: start at 1.0
     use_accel_lora: bool = False,  # add the optional Pruna 8-step accel LoRA (pair with --steps 8)

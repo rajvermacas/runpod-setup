@@ -55,7 +55,7 @@ Defaults are the **official Qwen-Image 2.1 settings** (25 steps, CFG 1.0, euler 
 | `--cfg` | 1.0 | official path keeps CFG 1; raise only with a negative prompt |
 | `--sampler` | `euler` | any ComfyUI sampler (`euler_ancestral`, `dpmpp_2m`, `res_multistep`, …) |
 | `--scheduler` | `simple` | `normal`, `karras`, … |
-| `--seed` | 42 | `0` = random seed |
+| `--seed` | 0 | random seed (fixed N = reproducible) |
 | `--use-nvfp4-dit` | off | swap to NVFP4 DiT (full speed needs B200) |
 | `--scaledown-window` | 60 | idle seconds before the container scales down; raise it (e.g. 300) to keep a warm container between runs |
 | `--out` | `qwen21_direct_out.png` | local output path |
@@ -261,7 +261,7 @@ modal run modal_zimage_turbo_direct.py --prompt "..." --scaledown-window 300 --o
 | `--cfg` | 1.0 | keep at 1.0 for Turbo |
 | `--sampler/--scheduler` | `res_multistep`/`simple` | template defaults |
 | `--shift` | 3.0 | `ModelSamplingAuraFlow` shift |
-| `--seed` | 42 | `0` = random seed |
+| `--seed` | 0 | random seed (fixed N = reproducible) |
 | `--unet-name` | int8 DiT | `z_image_turbo_bf16.safetensors` needs a bigger GPU |
 | `--clip-name` | `qwen_3_4b_fp8_mixed.safetensors` | `qwen_3_4b_fp4_mixed.safetensors` for extra headroom |
 | `--scaledown-window` | 200 | idle seconds before scale-down |
@@ -316,7 +316,7 @@ modal run modal_bfs_headswap_direct.py --body-image woman.png --head-image man.p
 | `--bfs-lora` | v1.1 | one of the three BFS Qwen-2.1 head weights above |
 | `--lora-strength` | 1.0 | guide says start at 1.0 |
 | `--use-accel-lora` | off | adds the Pruna 8-step LoRA (pair with `--steps 8`) |
-| `--seed` | 42 | `0` = random seed |
+| `--seed` | 0 | random seed (fixed N = reproducible) |
 | `--scaledown-window` | 2 | idle seconds before scale-down |
 | `--out` | `bfs_headswap_out.png` | local output path |
 

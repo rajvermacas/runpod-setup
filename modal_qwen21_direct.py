@@ -281,7 +281,7 @@ def main(
     cfg: float = 1.0,
     sampler: str = "euler",
     scheduler: str = "simple",
-    seed: int = 42,
+    seed: int = 0,
     use_nvfp4_dit: bool = False,
     scaledown_window: int = DEFAULT_SCALEDOWN_WINDOW,  # idle seconds before scale-down (default 2)
     out: str = "qwen21_direct_out.png",

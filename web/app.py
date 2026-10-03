@@ -376,7 +376,7 @@ async def generate(
     width: int = Form(1024),
     height: int = Form(1024),
     steps: int = Form(25),
-    seed: int = Form(42),
+    seed: int = Form(0),
 ):
     def _form_ctx(error: str, status: int):
         return templates.TemplateResponse(
@@ -485,7 +485,7 @@ def result(request: Request, call_id: str):
         # backend restarted or unknown id — still try Modal directly once
         JOBS[call_id] = {
             "status": "pending", "png": None, "error": None, "prompt": "",
-            "negative": "", "width": 1024, "height": 1024, "seed": 42,
+            "negative": "", "width": 1024, "height": 1024, "seed": 0,
             "steps": 25, "mode": "?", "ref_count": 0, "created": time.time(),
             "mock": MOCK_MODAL, "ref_previews": [],
         }
