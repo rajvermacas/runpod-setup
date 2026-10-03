@@ -608,7 +608,8 @@ function initInlineResult(formId, panelId) {
     if (formId === "i2i-swap-form") {
       const c = document.getElementById("swap-clothes");
       const p = document.getElementById("swap-pose");
-      if (c && p && !c.checked && !p.checked) return; // button is disabled anyway
+      const f = document.getElementById("swap-face");
+      if (c && p && f && !c.checked && !p.checked && !f.checked) return; // button is disabled anyway
     }
     panel.hidden = false;
     panel.innerHTML = '<div class="spin-row"><span class="mini-spinner"></span><span>Dispatching…</span></div>';
