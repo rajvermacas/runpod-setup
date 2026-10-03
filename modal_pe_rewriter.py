@@ -76,7 +76,9 @@ def _snapshot_dir() -> str:
     # Enhance is used rarely.
     max_containers=1,
     timeout=900,
-    enable_memory_snapshot=True,
+    # NO memory snapshot: snapshotting a 19 GB model causes restore
+    # slowness/failure (observed: 900s timeout). Cold load is only ~1 min.
+    enable_memory_snapshot=False,
 )
 @modal.concurrent(max_inputs=1)
 class PERewrite:

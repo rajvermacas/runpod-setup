@@ -380,6 +380,52 @@ def _poll_modal(call_id: str) -> None:
     log.info("poll %s done (%.0fs, %d bytes)", call_id, elapsed, len(job["png"]))
 
 
+def _eg_chain(chain_id: str, prompt: str, negative: str, width: int, height: int,
+              seed: int, steps: int, refs: list[bytes], mode: str,
+              char_image: bytes | None, identity: str) -> None:
+    """Background Enhance & Generate chain: fills the placeholder job."""
+    import time as _t
+
+    job = JOBS.get(chain_id)
+    if job is None:
+        return
+    try:
+        rewritten, ratio = _enhance_blocking(prompt, timeout=900)
+    except Exception as e:
+        job["status"] = "error"
+        job["error"] = f"Enhance failed ({type(e).__name__}): {e}. Try plain Generate."
+        log.exception("eg chain %s enhance failed", chain_id)
+        return
+    job.update({"prompt": rewritten, "enhanced": True, "ratio": ratio,
+                "stage": "generating"})
+    log.info("eg chain %s enhanced (ratio=%s), spawning %s",
+             chain_id, ratio or "?", mode)
+    try:
+        img_id = _spawn_modal(rewritten, negative, width, height, seed, steps,
+                              refs, mode, char_image, identity)
+    except Exception as e:
+        job["status"] = "error"
+        job["error"] = f"Modal spawn failed: {type(e).__name__}: {e}"
+        log.exception("eg chain %s spawn failed", chain_id)
+        return
+    deadline = _t.time() + 900
+    while _t.time() < deadline:
+        _poll_modal(img_id)
+        img_job = JOBS.get(img_id, {})
+        if img_job.get("status") == "done":
+            job.update({"png": img_job["png"], "status": "done",
+                        "ref_count": img_job.get("ref_count", job["ref_count"])})
+            log.info("eg chain %s done (%d bytes)", chain_id, len(job["png"]))
+            return
+        if img_job.get("status") == "error":
+            job["status"] = "error"
+            job["error"] = img_job.get("error", "image job failed")
+            return
+        _t.sleep(4)
+    job["status"] = "error"
+    job["error"] = "Image step timed out. Try plain Generate."
+
+
 @app.get("/", response_class=HTMLResponse)
 def index(request: Request, mode: str = ""):
     mode = mode if mode in MODES else DEFAULT_MODE
@@ -568,23 +614,30 @@ async def generate(
         return _form_ctx(
             "Head-swap needs a body upload plus a head: either upload 2 images, or upload 1 body and pick a character slot as the head.", 400)
 
-    original_prompt = ""
-    ratio = ""
     if flow == "enhance-generate":
         if mode not in ("generate", "turbo"):
             return _form_ctx("Enhance & Generate is only offered for Generate/Turbo modes.", 400)
-        log.info("POST /generate from %s: enhance-first flow, waiting on PE...", client)
-        original_prompt = prompt
-        try:
-            prompt, ratio = await run_in_threadpool(_enhance_blocking, prompt)
-        except TimeoutError:
-            log.warning("POST /generate from %s: enhance timed out", client)
-            return _form_ctx("Enhance timed out on the GPU (overloaded?). Try Enhance alone, or plain Generate.", 504)
-        except Exception as e:
-            log.exception("POST /generate from %s: enhance failed", client)
-            return _form_ctx(f"Enhance failed: {type(e).__name__}: {e}", 502)
-        log.info("POST /generate from %s: enhanced (ratio=%s), chaining to %s",
-                 client, ratio or "?", mode)
+        # Async chain: redirect immediately, background thread runs
+        # enhance -> generate and fills this same job. The result page polls
+        # through both stages (no 7-minute blocked POST).
+        chain_id = f"eg-{uuid.uuid4().hex[:12]}"
+        JOBS[chain_id] = {
+            "status": "pending", "png": None, "error": None, "kind": "image",
+            "stage": "enhancing", "prompt": prompt, "original_prompt": prompt,
+            "enhanced": False, "ratio": "", "negative": negative_prompt.strip(),
+            "width": width, "height": height, "seed": seed, "steps": steps,
+            "mode": f"{mode} (enhance+generate)",
+            "ref_count": len(refs), "created": time.time(),
+            "mock": MOCK_MODAL, "ref_previews": _previews(refs),
+        }
+        import threading
+
+        args = (chain_id, prompt, negative_prompt.strip(), width, height, seed,
+                steps, refs, mode, char_image, identity)
+        threading.Thread(target=_eg_chain, args=args, daemon=True).start()
+        log.info("POST /generate from %s -> chained %s, redirect /result/%s",
+                 client, mode, chain_id)
+        return RedirectResponse(url=f"/result/{chain_id}", status_code=303)
 
     try:
         # blocking Modal network call -> threadpool, taaki event loop block na ho
@@ -595,9 +648,6 @@ async def generate(
     except Exception as e:
         log.exception("POST /generate spawn failed for %s", client)
         return _form_ctx(f"Modal spawn failed: {type(e).__name__}: {e}", 502)
-    if original_prompt:
-        JOBS[call_id].update({"original_prompt": original_prompt, "enhanced": True,
-                              "ratio": ratio, "mode": f"{mode} (enhanced)"})
     log.info("POST /generate from %s -> redirect /result/%s", client, call_id)
     return RedirectResponse(url=f"/result/{call_id}", status_code=303)
 

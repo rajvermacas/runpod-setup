@@ -11,7 +11,7 @@
 <main class="card">
   <p><a href="/">← New generation</a></p>
   {% if job.status == "pending" %}
-    <h1>Generating… ({{ elapsed }}s)</h1>
+    <h1>{% if job.stage == "enhancing" %}Enhancing prompt…{% elif job.stage == "generating" %}Enhance done — generating image…{% else %}Generating…{% endif %} ({{ elapsed }}s)</h1>
     <p class="sub">Job <code>{{ call_id }}</code> is running on Modal. This page refreshes every 4 s.</p>
     <div class="spinner"></div>
     <p class="hint">Prompt: {{ job.prompt }}</p>
