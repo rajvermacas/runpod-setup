@@ -86,6 +86,14 @@ HEADSWAP_DEFAULT_PROMPT = (
     "rotation, micro expressions from <image1>, high quality, sharp details, 4k"
 )
 
+# Per-mode prompt defaults (form prefill + JS swap on mode change).
+MODE_DEFAULT_PROMPTS = {
+    "generate": "cinematic portrait of an astronaut in a neon Tokyo alley, rain reflections, ultra detailed",
+    "edit": "change the jacket to bright red; keep the face, pose and background unchanged",
+    "headswap": HEADSWAP_DEFAULT_PROMPT,
+    "turbo": "cinematic portrait of an astronaut in a neon Tokyo alley, rain reflections, ultra detailed",
+}
+
 MAX_REFS = 4
 MAX_FILE_MB = 10
 
@@ -252,8 +260,8 @@ def index(request: Request, mode: str = ""):
     mode = mode if mode in MODES else DEFAULT_MODE
     return templates.TemplateResponse(
         request, "index.html",
-        {"mode": mode, "modes": MODES,
-         "default_prompt": HEADSWAP_DEFAULT_PROMPT if mode == "headswap" else ""},
+        {"mode": mode, "modes": MODES, "mode_prompts": MODE_DEFAULT_PROMPTS,
+         "default_prompt": MODE_DEFAULT_PROMPTS[mode]},
     )
 
 
@@ -280,8 +288,8 @@ async def generate(
         return templates.TemplateResponse(
             request, "index.html",
             {"error": error, "mode": mode if mode in MODES else DEFAULT_MODE,
-             "modes": MODES,
-             "default_prompt": HEADSWAP_DEFAULT_PROMPT if mode == "headswap" else prompt},
+             "modes": MODES, "mode_prompts": MODE_DEFAULT_PROMPTS,
+             "default_prompt": prompt or MODE_DEFAULT_PROMPTS.get(mode, "")},
             status_code=status,
         )
 

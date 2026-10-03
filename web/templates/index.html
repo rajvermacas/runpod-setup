@@ -45,7 +45,7 @@
   </form>
   <p class="hint" id="mode-hint"></p>
 <script>
-const HEADSWAP_PROMPT = {{ default_prompt | tojson }};
+const MODE_PROMPTS = {{ mode_prompts | tojson }};
 const INFO = {
   generate: {
     sub: "Text-to-image on Modal GPU (Qwen-Image 2.1 4-bit).",
@@ -74,6 +74,7 @@ const INFO = {
 };
 const modeEl = document.getElementById("mode");
 const promptEl = document.getElementById("prompt");
+let prevMode = modeEl.value;
 function applyMode(setDefaults) {
   const m = modeEl.value, info = INFO[m];
   document.getElementById("mode-sub").textContent = info.sub;
@@ -83,10 +84,16 @@ function applyMode(setDefaults) {
   document.getElementById("neg-block").style.display = info.showNeg ? "" : "none";
   promptEl.required = info.promptRequired;
   if (setDefaults) {
+    // Swap in the new mode's default prompt — unless the user typed their
+    // own text (anything that isn't the previous mode's default or empty).
+    const cur = promptEl.value.trim();
+    if (!cur || cur === (MODE_PROMPTS[prevMode] || "").trim()) {
+      promptEl.value = MODE_PROMPTS[m];
+    }
     document.getElementById("steps").value = info.steps;
     document.getElementById("seed").value = info.seed;
-    if (m === "headswap" && !promptEl.value.trim()) promptEl.value = HEADSWAP_PROMPT;
   }
+  prevMode = m;
 }
 modeEl.addEventListener("change", () => applyMode(true));
 applyMode(false);
