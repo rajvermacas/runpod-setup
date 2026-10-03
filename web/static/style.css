@@ -245,6 +245,8 @@ details ul { color: var(--dim); }
   .qdot.run { animation: none; }
 }
 .topnav { text-align: right; margin: 0 0 0.5rem; font-size: 0.9rem; }
+.topnav a { text-decoration: none; color: var(--dim); }
+.topnav a:hover { color: var(--ink); }
 .queue { display: flex; flex-direction: column; gap: 0.9rem; }
 .qitem { display: flex; gap: 0.9rem; border-top: 1px solid var(--line); padding-top: 0.9rem; }
 .qitem img { width: 140px; border: 1px solid var(--line); border-radius: 2px; }
