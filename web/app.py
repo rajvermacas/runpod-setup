@@ -83,7 +83,7 @@ MODES = ("generate", "edit", "headswap", "turbo")
 # Optional composition presets: appended to the prompt. Add more here —
 # key = form value, value = fragment. Keep fragments pose/composition-only.
 PRESETS = {
-    "full-body": "full body shot, head to feet fully visible, standing pose",
+    "full-body": "full body shot, entire figure from head to feet fully in frame including feet and footwear, standing pose, camera pulled back to a wide framing",
     "sitting": "seated position, sitting naturally, three-quarter view",
     "walking": "mid-stride walking toward camera, natural motion, clothes and hair moving slightly",
     "laughing": "caught mid-laugh, genuine crinkled eyes, unposed expression",
@@ -101,6 +101,16 @@ SCENES = {
     "home": "at home in a lived-in living room, sofa and window light behind",
     "market": "in a busy local market, stalls and people blurred behind",
     "beach-day": "on a public beach midday, sea and people in distance",
+}
+
+# Lighting presets: the light itself (fifth dropdown, stacks with all).
+LIGHTS = {
+    "soft-window": "soft window light from one side, gentle falloff, calm",
+    "neon-night": "neon signs glowing at night, cyan-magenta reflections, dark streets",
+    "harsh-noon": "hard midday sun overhead, crisp short shadows, high contrast",
+    "firelight": "warm fire flicker on the face, dark background, glowing embers",
+    "blue-hour": "deep blue twilight, last orange band on horizon, quiet mood",
+    "studio-softbox": "large softbox key with subtle fill, clean controlled light",
 }
 
 # Lens presets: focal length character (fourth dropdown, stacks with all).
@@ -121,17 +131,14 @@ STYLES = {
     "film-grain": "35mm film grain, subtle imperfections, analog feel",
 }
 
-# Anti-plastic lock v4: whole-body skin realism is the top priority.
-# Zone-specific hooks (generic "natural skin" fails — attention needs named
-# zones to bind). Waxy/flawless/AI-glow prohibited at every level.
+# Anti-plastic lock v3.1: v3 overexpressed redness (whole-face sunburn) and
+# diluted framing. Redness minimal + confined, fragment trimmed so
+# composition instructions keep weight. Whole-body priority retained.
 REAL_SKIN = ("natural real skin over the whole visible body, face, neck, arms and legs, "
-             "visible pore structure on nose, forehead and cheeks, fine vellus hair on cheeks "
-             "catching sidelight, subtle redness around nostrils with warmth at cheeks, uneven skin "
-             "tone with natural pigmentation variation, slight facial asymmetry, soft subsurface glow "
-             "at ears and lips, natural lip moisture, faint skin oiliness on T-zone, fine lines "
-             "preserved, subtle film grain, matte natural skin finish with non-uniform specular "
-             "response, strictly prohibited: waxy skin, flawless skin, porcelain skin, airbrushed skin, "
-             "poreless skin, plastic sheen, ai glow, beauty filter, over-smoothing, cgi look")
+             "visible pores on nose and cheeks, faint skin oiliness on T-zone, very subtle "
+             "redness confined around nostrils, slight facial asymmetry, soft subsurface glow, "
+             "subtle film grain, matte natural finish, strictly prohibited: waxy skin, flawless skin, "
+             "porcelain skin, airbrushed skin, plastic sheen, ai glow, beauty filter, cgi look")
 # Form default; BFS_HEADSWAP=1 keeps the earlier single-purpose toggle working
 # by preselecting headswap.
 DEFAULT_MODE = os.environ.get("DEFAULT_MODE", "headswap" if os.environ.get("BFS_HEADSWAP", "") == "1" else "generate")
@@ -505,6 +512,7 @@ def index(request: Request, mode: str = "", char_error: str = ""):
          "styles": STYLES, "style": "",
          "scenes": SCENES, "scene": "",
          "lenses": LENSES, "lens": "",
+         "lights": LIGHTS, "light": "",
          "error": char_error or None},
     )
 
@@ -696,6 +704,7 @@ async def generate(
     style: str = Form(""),
     scene: str = Form(""),
     lens: str = Form(""),
+    light: str = Form(""),
     realskin: str = Form(""),
 ):
     def _form_ctx(error: str, status: int):
@@ -708,7 +717,8 @@ async def generate(
              "presets": PRESETS, "preset": preset,
              "styles": STYLES, "style": style,
              "scenes": SCENES, "scene": scene,
-             "lenses": LENSES, "lens": lens},
+             "lenses": LENSES, "lens": lens,
+             "lights": LIGHTS, "light": light},
             status_code=status,
         )
 
@@ -825,6 +835,11 @@ async def generate(
         return _form_ctx("Unknown lens.", 400)
     if lens and mode in ("generate", "turbo"):
         prompt = f"{prompt.strip()}, {LENSES[lens]}"
+    light = (light or "").strip()
+    if light and light not in LIGHTS:
+        return _form_ctx("Unknown light.", 400)
+    if light and mode in ("generate", "turbo"):
+        prompt = f"{prompt.strip()}, {LIGHTS[light]}"
     if (realskin or "").strip().lower() in ("1", "on", "true", "yes"):
         prompt = f"{prompt.strip()}, {REAL_SKIN}"
     gpu = (gpu or "T4").upper()

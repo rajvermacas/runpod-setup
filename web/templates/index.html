@@ -64,6 +64,16 @@
       </select>
     </div>
 
+    <div id="light-block">
+      <label for="light">Light <span class="opt">(optional lighting)</span></label>
+      <select id="light" name="light">
+        <option value="">No light</option>
+        {% for key in lights %}
+        <option value="{{ key }}" title="{{ lights[key] }}" {% if light == key %}selected{% endif %}>{{ key }}</option>
+        {% endfor %}
+      </select>
+    </div>
+
     <div id="char-block">
       <label for="character">Character <span class="opt">(optional — saved angles auto-attach + identity injected; in Head-swap angle-1 becomes the head)</span></label>
       <select id="character" name="character">
@@ -178,6 +188,15 @@
         <li><b>85mm</b> — tight portrait, blurred background</li>
         <li><b>135mm</b> — flat telephoto, creamy distance</li>
       </ul>
+      <h3>Light</h3>
+      <ul>
+        <li><b>soft-window</b> — gentle one-side daylight, calm</li>
+        <li><b>neon-night</b> — cyan-magenta glow, dark streets</li>
+        <li><b>harsh-noon</b> — hard overhead sun, crisp shadows</li>
+        <li><b>firelight</b> — warm flicker, dark background</li>
+        <li><b>blue-hour</b> — deep twilight, quiet mood</li>
+        <li><b>studio-softbox</b> — clean controlled key light</li>
+      </ul>
       <p class="hint">Pose, style, scene and lens stack — pick one of each. Hover any dropdown option for its exact prompt text.</p>
     </div>
   </details>
@@ -262,6 +281,7 @@ function applyMode(setDefaults) {
   document.getElementById("style-block").style.display = (m === "generate" || m === "turbo") ? "" : "none";
   document.getElementById("scene-block").style.display = (m === "generate" || m === "turbo") ? "" : "none";
   document.getElementById("lens-block").style.display = (m === "generate" || m === "turbo") ? "" : "none";
+  document.getElementById("light-block").style.display = (m === "generate" || m === "turbo") ? "" : "none";
   document.getElementById("enhance-btn").style.display = (m === "generate" || m === "turbo") ? "" : "none";
   document.getElementById("eg-btn").style.display = (m === "generate" || m === "turbo") ? "" : "none";
   promptEl.required = info.promptRequired;
