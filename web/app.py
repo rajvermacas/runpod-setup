@@ -41,8 +41,10 @@ from __future__ import annotations
 
 import base64
 import io
+import json
 import logging
 import os
+import re
 import time
 import uuid
 from pathlib import Path
@@ -104,6 +106,34 @@ MAX_FILE_MB = 10
 
 # call_id -> job dict (in-memory; single-process dev server)
 JOBS: dict[str, dict] = {}
+
+
+def _load_dotenv() -> None:
+    """Load KEY=VALUE pairs from .env (project root) without overriding real env."""
+    env_path = Path(__file__).resolve().parent.parent / ".env"
+    try:
+        for line in env_path.read_text().splitlines():
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            k, v = line.split("=", 1)
+            os.environ.setdefault(k.strip(), v.strip().strip("'\""))
+    except FileNotFoundError:
+        pass
+
+
+_load_dotenv()
+OPENROUTER_API_KEY = os.environ.get("OPENROUTER_API_KEY", "")
+OPENROUTER_MODEL = os.environ.get("OPENROUTER_MODEL", "inclusionai/ling-3.1-flash")
+
+ENHANCE_SYSTEM = (
+    "You are a prompt engineer for the Qwen-Image-2.1 text-to-image model. "
+    "Expand the user's short idea into one detailed English image prompt: "
+    "concrete subject, action/pose, environment texture, light direction and color, "
+    "camera/lens, medium and grain, mood. No people who could be real, no text overlays. "
+    'Reply with JSON only: {"rewritten_prompt": "<single detailed prompt>", '
+    '"wh_ratio": "<W:H suggestion like 16:9, or empty>"}.'
+)
 
 # Saved character slots: web/characters/<name>.png|jpg + <name>.txt (identity anchor).
 CHARACTERS_DIR = BASE_DIR / "characters"
@@ -263,6 +293,43 @@ def _is_image(data: bytes) -> bool:
         return False
 
 
+def _openrouter_enhance(text: str, timeout: int = 90) -> dict:
+    """Rewrite via OpenRouter LLM. Returns {"rewritten_prompt", "wh_ratio"}."""
+    text = (text or "").strip()
+    if not text:
+        raise ValueError("nothing to enhance: prompt is empty")
+    if MOCK_MODAL:
+        return {"rewritten_prompt": f"[mock enhanced] {text} — cinematic light, "
+                                    "shallow depth of field, ultra detailed",
+                "wh_ratio": "16:9"}
+    if not OPENROUTER_API_KEY:
+        raise RuntimeError("OPENROUTER_API_KEY missing (.env)")
+    from openai import OpenAI
+
+    client = OpenAI(base_url="https://openrouter.ai/api/v1",
+                    api_key=OPENROUTER_API_KEY, timeout=timeout)
+    # NOTE: no response_format — the serving provider rejects structured
+    # outputs. The system prompt already demands JSON-only; parse leniently.
+    resp = client.chat.completions.create(
+        model=OPENROUTER_MODEL,
+        messages=[{"role": "system", "content": ENHANCE_SYSTEM},
+                  {"role": "user", "content": text}],
+        temperature=0.7, max_tokens=1024,
+    )
+    content = (resp.choices[0].message.content or "").strip()
+    if content.startswith("```"):
+        content = re.sub(r"^```(?:json)?\s*", "", content)
+        content = re.sub(r"\s*```$", "", content)
+    try:
+        result = json.loads(content)
+    except json.JSONDecodeError:
+        result = {"rewritten_prompt": content, "wh_ratio": ""}
+    rewritten = str(result.get("rewritten_prompt", "")).strip()
+    if not rewritten:
+        raise ValueError("enhancer returned an empty rewrite")
+    return {"rewritten_prompt": rewritten, "wh_ratio": str(result.get("wh_ratio", ""))}
+
+
 def _previews(refs: list[bytes], limit: int = 4) -> list[str]:
     out: list[str] = []
     for b in refs[:limit]:
@@ -328,6 +395,7 @@ def health():
     return {"status": "ok", "modal_app": MODAL_APP_NAME,
             "bfs_modal_app": BFS_MODAL_APP_NAME,
             "turbo_modal_app": TURBO_MODAL_APP_NAME, "mock": MOCK_MODAL,
+            "openrouter": bool(OPENROUTER_API_KEY), "openrouter_model": OPENROUTER_MODEL,
             "modes": list(MODES), "default_mode": DEFAULT_MODE,
             "characters": len(list_characters())}
 
@@ -366,10 +434,29 @@ async def save_character(
     return RedirectResponse(url=f"/?mode=generate", status_code=303)
 
 
+@app.post("/enhance")
+async def enhance(request: Request):
+    """OpenRouter rewrite: {text} -> {rewritten_prompt, wh_ratio} (no GPU)."""
+    try:
+        body = await request.json()
+        text = body.get("text") or ""
+    except Exception:
+        return Response('{"error": "invalid JSON"}', status_code=400, media_type="application/json")
+    try:
+        return await run_in_threadpool(_openrouter_enhance, text)
+    except ValueError as e:
+        return Response(f'{{"error": "{e}"}}', status_code=400, media_type="application/json")
+    except Exception as e:
+        log.exception("POST /enhance failed")
+        return Response(f'{{"error": "enhance failed: {type(e).__name__}: {e}"}}',
+                        status_code=502, media_type="application/json")
+
+
 @app.post("/generate")
 async def generate(
     request: Request,
     mode: str = Form("generate"),
+    flow: str = Form("generate"),
     character: str = Form(""),
     prompt: str = Form(""),
     negative_prompt: str = Form(""),
@@ -464,6 +551,22 @@ async def generate(
         return _form_ctx(
             "Head-swap needs a body upload plus a head: either upload 2 images, or upload 1 body and pick a character slot as the head.", 400)
 
+    original_prompt = ""
+    ratio = ""
+    if flow == "enhance-generate":
+        if mode not in ("generate", "turbo"):
+            return _form_ctx("Enhance & Generate is only offered for Generate/Turbo modes.", 400)
+        log.info("POST /generate from %s: openrouter enhance-first...", client)
+        original_prompt = prompt
+        try:
+            enhanced = await run_in_threadpool(_openrouter_enhance, prompt)
+            prompt, ratio = enhanced["rewritten_prompt"], enhanced["wh_ratio"]
+        except Exception as e:
+            log.exception("POST /generate from %s: enhance failed", client)
+            return _form_ctx(f"Enhance failed: {type(e).__name__}: {e}", 502)
+        log.info("POST /generate from %s: enhanced (ratio=%s), chaining to %s",
+                 client, ratio or "?", mode)
+
     try:
         # blocking Modal network call -> threadpool, taaki event loop block na ho
         call_id = await run_in_threadpool(
@@ -473,6 +576,9 @@ async def generate(
     except Exception as e:
         log.exception("POST /generate spawn failed for %s", client)
         return _form_ctx(f"Modal spawn failed: {type(e).__name__}: {e}", 502)
+    if original_prompt:
+        JOBS[call_id].update({"original_prompt": original_prompt, "enhanced": True,
+                              "ratio": ratio, "mode": f"{mode} (enhanced)"})
     log.info("POST /generate from %s -> redirect /result/%s", client, call_id)
     return RedirectResponse(url=f"/result/{call_id}", status_code=303)
 

@@ -4,3 +4,4 @@ python-multipart>=0.0.18
 uvicorn>=0.30
 modal>=1.0
 pillow>=10
+openai
