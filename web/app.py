@@ -147,7 +147,15 @@ def _enhance_system() -> str:
         return ENHANCE_SYSTEM_FALLBACK
 
 
-ENHANCE_SYSTEM = _enhance_system()
+ENHANCE_SYSTEM = _enhance_system() + """
+
+ADDITIONAL CONSTRAINT (overrides the size guidance above — follow everything
+else as written): keep rewritten_prompt SURGICAL, 80-120 words, one paragraph.
+Include only what decides the image: subject + key action/pose, the 2-3 most
+important environment details, light direction and color, camera/lens, one style
+word. Drop the full frame-walk inventory, secondary objects, and closing summary.
+No quality boosters. wh_ratio rule unchanged.
+"""
 
 # Saved character slots: web/characters/<name>.png|jpg + <name>.txt (identity anchor).
 CHARACTERS_DIR = BASE_DIR / "characters"
@@ -324,13 +332,12 @@ def _openrouter_enhance(text: str, timeout: int = 90) -> dict:
                     api_key=OPENROUTER_API_KEY, timeout=timeout)
     # NOTE: no response_format — the serving provider rejects structured
     # outputs. The system prompt already demands JSON-only; parse leniently.
-    # max_tokens 4096: the official contract runs ~20 sentences/500 words
-    # plus reasoning headroom — 1024 truncates to an empty reply.
+    # max_tokens 2048: surgical rewrites are short; headroom for reasoning.
     resp = client.chat.completions.create(
         model=OPENROUTER_MODEL,
         messages=[{"role": "system", "content": ENHANCE_SYSTEM},
                   {"role": "user", "content": text}],
-        temperature=0.7, max_tokens=4096,
+        temperature=0.7, max_tokens=2048,
     )
     content = (resp.choices[0].message.content or "").strip()
     if content.startswith("```"):

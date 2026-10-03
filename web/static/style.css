@@ -91,6 +91,22 @@ textarea { min-height: 7rem; resize: vertical; line-height: 1.55; }
 #eg-btn { background: transparent; color: var(--safe); border: 1px solid var(--safe-deep); }
 #eg-btn:hover { background: #2a1410; }
 
+/* Button loader: inline spinner while enhancing */
+#enhance-btn .btn-spin {
+  display: none;
+  width: 0.9em; height: 0.9em;
+  margin-left: 0.5em;
+  vertical-align: -0.12em;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  border-radius: 50%;
+}
+#enhance-btn.loading .btn-spin { display: inline-block; animation: spin 0.8s linear infinite; }
+#enhance-btn.loading { cursor: wait; opacity: 0.85; }
+.btn-row button { margin-top: 0; }
+#eg-btn { background: transparent; color: var(--safe); border: 1px solid var(--safe-deep); }
+#eg-btn:hover { background: #2a1410; }
+
 ::placeholder { color: #6f6355; }
 
 input[type="file"] { margin: 0.25rem 0 0; color: var(--dim); }

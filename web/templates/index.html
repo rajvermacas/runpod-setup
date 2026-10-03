@@ -34,7 +34,9 @@
     <div class="prompt-row">
       <textarea id="prompt" name="prompt" rows="4"
         placeholder="cinematic photorealistic portrait, soft golden light, ultra detailed">{{ default_prompt }}</textarea>
-      <button type="button" id="enhance-btn" title="Rewrite via OpenRouter (no GPU)">Enhance</button>
+      <button type="button" id="enhance-btn" title="Rewrite via OpenRouter (no GPU)">
+        <span class="btn-label">Enhance</span><span class="btn-spin" aria-hidden="true"></span>
+      </button>
     </div>
     <p class="hint" id="enhance-hint"></p>
 
@@ -151,6 +153,7 @@ enhanceBtn.addEventListener("click", async () => {
   const text = promptEl.value.trim();
   if (!text) { enhanceHint.textContent = "Write a short idea first, then Enhance."; return; }
   enhanceBtn.disabled = true;
+  enhanceBtn.classList.add("loading");
   enhanceHint.textContent = "Enhancing… (LLM, no GPU)";
   try {
     const r = await fetch("/enhance", {
@@ -167,6 +170,7 @@ enhanceBtn.addEventListener("click", async () => {
     enhanceHint.textContent = "Enhance failed: network error.";
   } finally {
     enhanceBtn.disabled = false;
+    enhanceBtn.classList.remove("loading");
   }
 });
 </script>
