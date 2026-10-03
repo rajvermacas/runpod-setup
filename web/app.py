@@ -204,7 +204,7 @@ MODE_DEFAULT_PROMPTS = {
 SWAP_DEFAULT_PROMPTS = {
     "both": "Change the outfit of <image1> to the outfit in <image2>, and change the pose of the person in <image1> to the pose from <image2>. Keep the face of <image1> unchanged, photorealistic",
     "clothes": "Change the outfit of <image1> to the outfit in <image2>. Keep the face and pose of <image1> unchanged, photorealistic",
-    "pose": "Replace the pose of the person in <image1> with the pose from <image2>. Keep the face and clothing of <image1> unchanged, photorealistic",
+    "pose": "Make the person in <image1> copy the exact pose from <image2>, keeping <image1>'s face, hair, clothing and background unchanged; the pose should be pixel-accurate — arms, head, legs, head tilt and gaze matching <image2>",
     "neither": "",
 }
 
