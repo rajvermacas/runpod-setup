@@ -565,34 +565,29 @@ bindPreview("swap-ref", "swap-ref-preview");
 bindPreview("fs-body", "fs-body-preview");
 bindPreview("fs-head", "fs-head-preview");
 
-// Swap: at least one of Clothes/Pose; the prompt auto-rewrites to match the
-// checkbox combination unless the user typed their own text.
+// Swap: Clothes/Pose behave like radios — exactly one selected (JS-enforced),
+// never zero; the prompt auto-rewrites to that single choice unless the user
+// typed their own text.
 (function () {
   const clothes = document.getElementById("swap-clothes");
   const pose = document.getElementById("swap-pose");
   const prompt = document.getElementById("swap-prompt");
-  const submit = document.getElementById("swap-submit");
-  const hint = document.getElementById("swap-hint");
   if (!clothes || !pose || !prompt) return;
   let swapAuto = SWAP_PROMPTS.clothes;
-  const sync = () => {
-    const next = clothes.checked && pose.checked ? SWAP_PROMPTS.both
-               : clothes.checked ? SWAP_PROMPTS.clothes
-               : pose.checked ? SWAP_PROMPTS.pose
-               : SWAP_PROMPTS.neither;
+  const sync = (changed) => {
+    // Exactly one selected: switching wins, unchecking the active one is undone.
+    if (clothes.checked && pose.checked) {
+      if (changed === pose) clothes.checked = false; else pose.checked = false;
+    } else if (!clothes.checked && !pose.checked) {
+      (changed === pose ? pose : clothes).checked = true;
+    }
+    const next = clothes.checked ? SWAP_PROMPTS.clothes : SWAP_PROMPTS.pose;
     const cur = prompt.value;
     if (!cur.trim() || cur === swapAuto) prompt.value = next;
     swapAuto = next;
-    const none = !clothes.checked && !pose.checked;
-    if (submit) submit.disabled = none;
-    if (hint) {
-      if (none) hint.textContent = "Pick Clothes and/or Pose to enable Generate.";
-      else if (clothes.checked && pose.checked) hint.textContent = "Combined swap is unreliable on this model — one image may only get one change. Prefer one at a time (Clothes tested solid, Pose tested solid).";
-      else hint.textContent = "";
-    }
   };
-  clothes.addEventListener("change", sync);
-  pose.addEventListener("change", sync);
+  clothes.addEventListener("change", () => sync(clothes));
+  pose.addEventListener("change", () => sync(pose));
   sync();
 })();
 
