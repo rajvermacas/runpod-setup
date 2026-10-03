@@ -150,7 +150,7 @@ async function refreshRail() {
       const secs = j.elapsed || 0;
       const age = secs < 60 ? secs + "s" : Math.floor(secs / 60) + "m";
       const label = esc(j.error ? j.error.slice(0, 80) : j.prompt.slice(0, 90));
-      return `<a class="qrow" href="/result/${j.id}">${thumb}` +
+      return `<a class="qrow" href="/result/${j.id}" target="_blank" rel="noopener">${thumb}` +
         `<span class="qmeta"><code>${esc(j.id.slice(0, 12))}</code> ` +
         `<span class="qmode">${esc(j.mode)} · ${age}</span><span class="qlabel">${label}</span></span></a>`;
     }).join("");
